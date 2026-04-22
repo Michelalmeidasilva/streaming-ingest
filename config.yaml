@@ -1,0 +1,6 @@
+app:
+  port: 8080
+rabbitmq:
+  url: amqp://guest:guest@rabbitmq:5672/
+mongodb:
+  uri: mongodb://mongodb:27017/streaming

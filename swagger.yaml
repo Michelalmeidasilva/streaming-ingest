@@ -1,0 +1,102 @@
+openapi: 3.0.3
+info:
+  title: Streaming Ingest - Event Gateway API
+  description: API responsável por receber e normalizar eventos de ciclo de vida de upload (vindos do Frontend) e webhooks de conclusão do Storage (MinIO/AWS S3).
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Servidor Local
+paths:
+  /events:
+    post:
+      summary: Envia um evento de ciclo de vida de upload
+      description: Utilizado pelo front-end para sinalizar inícios e progressos (percentuais) de upload de vídeo.
+      operationId: sendEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrontEndEvent'
+      responses:
+        '202':
+          description: Evento aceito e roteado para o RabbitMQ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Event accepted"
+        '400':
+          description: Erro de validação de payload
+        '500':
+          description: Erro interno de processamento ou falha no broker
+
+  /webhooks/storage/{provider}:
+    post:
+      summary: Webhook de escuta do Object Storage
+      description: Recebe eventos de sistema do seu bucket no provedor escolhido (ex. quando o arquivo terminou de ser copiado com sucesso para a cloud).
+      operationId: processWebhook
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: O provedor de storage que disparou o webhook (minio, aws-s3).
+          schema:
+            type: string
+            enum: [minio, aws-s3]
+      requestBody:
+        description: O payload cru e aninhado (Event Notification) gerado nativamente pelo provedor do Cloud.
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook processado (Convertido com sucesso em DomainEvent e injetado na fila)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Webhook processed successfully"
+        '400':
+          description: Provedor não suportado ou erro de parseamento do payload
+
+components:
+  schemas:
+    FrontEndEvent:
+      type: object
+      required:
+        - eventType
+        - payload
+      properties:
+        eventType:
+          type: string
+          description: Tipo do evento que fará a composição da Routing Key no broker. (ex. upload.progress)
+          example: "upload.progress"
+        payload:
+          type: object
+          description: Um objeto livre contendo chaves, meta-dados e tamanhos do processo em andamento.
+          properties:
+            videoId:
+              type: string
+              example: "ebd23f99-c89b-43d9-a72a-1928fb211e40"
+            filename:
+              type: string
+              example: "meu-video-teste.mp4"
+            progress:
+              type: number
+              format: float
+              example: 55.4
+            uploadedBytes:
+              type: integer
+              example: 5540000
+            totalBytes:
+              type: integer
+              example: 10000000
