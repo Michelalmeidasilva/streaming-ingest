@@ -1,23 +1,25 @@
 package webhooks
 
 import (
+	"context"
 	"fmt"
 	"streaming-ingest/internal/adapters"
 	"streaming-ingest/internal/rabbitmq"
+	"streaming-ingest/internal/videos"
+	"time"
 )
 
 type Service struct {
 	publisher *rabbitmq.Publisher
 	adapters  map[string]adapters.StorageAdapter
+	repo      videos.VideoRepository
 }
 
-func NewService(pub *rabbitmq.Publisher) *Service {
+func NewService(pub *rabbitmq.Publisher, storageAdapters map[string]adapters.StorageAdapter, repo videos.VideoRepository) *Service {
 	return &Service{
 		publisher: pub,
-		adapters: map[string]adapters.StorageAdapter{
-			"minio":  adapters.NewMinioAdapter(),
-			"aws-s3": adapters.NewS3Adapter(),
-		},
+		adapters:  storageAdapters,
+		repo:      repo,
 	}
 }
 
@@ -30,6 +32,22 @@ func (s *Service) ProcessWebhook(provider string, payload []byte) error {
 	domainEvent, err := adapter.ParseEvent(payload)
 	if err != nil {
 		return fmt.Errorf("failed to parse event for provider %s: %w", provider, err)
+	}
+
+	// Save metadata to MongoDB
+	video := &videos.Video{
+		VideoID:   domainEvent.VideoID,
+		Filename:  domainEvent.Filename,
+		Size:      domainEvent.Size,
+		Provider:  domainEvent.Provider,
+		Status:    "uploaded",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	err = s.repo.Save(context.Background(), video)
+	if err != nil {
+		return fmt.Errorf("failed to save video metadata: %w", err)
 	}
 
 	routingKey := fmt.Sprintf("video.%s", domainEvent.EventType)

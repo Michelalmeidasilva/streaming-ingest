@@ -15,4 +15,6 @@ type DomainEvent struct {
 // StorageAdapter parses provider-specific webhooks into domain events
 type StorageAdapter interface {
 	ParseEvent(payload []byte) (*DomainEvent, error)
+	ListVideos(bucket string) ([]DomainEvent, error)
+	GenerateURL(bucket, key string) (string, error)
 }

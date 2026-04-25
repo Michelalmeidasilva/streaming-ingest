@@ -68,6 +68,26 @@ paths:
         '400':
           description: Provedor não suportado ou erro de parseamento do payload
 
+  /videos:
+    get:
+      summary: Lista todos os vídeos disponíveis nos storages
+      description: Recupera metadados agregados de todos os vídeos finalizados nos provedores de storage integrados.
+      operationId: listVideos
+      responses:
+        '200':
+          description: Lista de vídeos recuperada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  videos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DomainEvent'
+        '500':
+          description: Erro interno ao listar objetos do storage
+
 components:
   schemas:
     FrontEndEvent:
@@ -100,3 +120,26 @@ components:
             totalBytes:
               type: integer
               example: 10000000
+
+    DomainEvent:
+      type: object
+      properties:
+        eventType:
+          type: string
+          example: "upload.completed"
+        videoId:
+          type: string
+          example: "ebd23f99-c89b-43d9-a72a-1928fb211e40"
+        filename:
+          type: string
+          example: "meu-video-teste.mp4"
+        size:
+          type: integer
+          example: 10000000
+        provider:
+          type: string
+          example: "minio"
+        occurredAt:
+          type: string
+          format: date-time
+          example: "2026-04-21T18:00:00Z"

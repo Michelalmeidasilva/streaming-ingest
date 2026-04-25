@@ -62,3 +62,13 @@ func (a *S3Adapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 		OccurredAt: record.EventTime,
 	}, nil
 }
+
+func (a *S3Adapter) ListVideos(bucket string) ([]DomainEvent, error) {
+	// TODO: Implement S3 listing using AWS SDK
+	return []DomainEvent{}, nil
+}
+
+func (a *S3Adapter) GenerateURL(bucket, key string) (string, error) {
+	// TODO: Implement S3 URL generation using AWS SDK
+	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", bucket, key), nil
+}
