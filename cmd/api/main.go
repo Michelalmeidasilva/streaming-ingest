@@ -100,6 +100,7 @@ func main() {
 	v1.Post("/events", eventsHandler.ReceiveEvent)
 	v1.Post("/webhooks/storage/:provider", webhookHandler.HandleProviderWebhook)
 	v1.Get("/videos", videosHandler.ListVideos)
+	v1.Get("/videos/search", videosHandler.SearchVideos)
 
 	// Graceful Shutdown
 	go func() {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -72,15 +73,22 @@ func (a *MinioAdapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 	}
 
 	record := event.Records[0]
-	keyParts := strings.Split(record.S3.Object.Key, "/")
+	// Unescape the key in case it's URL-encoded (common in some MinIO versions/configs)
+	rawKey := record.S3.Object.Key
+	if decodedKey, err := url.QueryUnescape(rawKey); err == nil {
+		rawKey = decodedKey
+	}
+
+	keyParts := strings.Split(rawKey, "/")
 	var videoID, filename string
 
 	if len(keyParts) >= 2 {
 		videoID = keyParts[len(keyParts)-2]
 		filename = keyParts[len(keyParts)-1]
 	} else {
-		filename = record.S3.Object.Key
-		videoID = "unknown"
+		filename = rawKey
+		// If no slash, use the filename as ID to avoid overwriting "unknown" records
+		videoID = rawKey
 	}
 
 	return &DomainEvent{
@@ -111,14 +119,25 @@ func (a *MinioAdapter) ListVideos(bucket string) ([]DomainEvent, error) {
 			return nil, object.Err
 		}
 
-		// Filter out chunk files and only include the main video file
-		if strings.Contains(object.Key, ".chunk.") || !strings.Contains(object.Key, "/") {
+		// Filter out chunk files
+		if strings.Contains(object.Key, ".chunk.") {
 			continue
 		}
 
-		parts := strings.Split(object.Key, "/")
-		videoID := parts[0]
-		filename := strings.Join(parts[1:], "/")
+		rawKey := object.Key
+		if decodedKey, err := url.QueryUnescape(rawKey); err == nil {
+			rawKey = decodedKey
+		}
+
+		parts := strings.Split(rawKey, "/")
+		var videoID, filename string
+		if len(parts) >= 2 {
+			videoID = parts[len(parts)-2]
+			filename = parts[len(parts)-1]
+		} else {
+			videoID = rawKey
+			filename = rawKey
+		}
 
 		videos = append(videos, DomainEvent{
 			EventType:  "upload.completed",

@@ -23,6 +23,7 @@ type Video struct {
 type VideoRepository interface {
 	Save(ctx context.Context, video *Video) error
 	ListAll(ctx context.Context) ([]Video, error)
+	Search(ctx context.Context, query string) ([]Video, error)
 }
 
 type MongoRepository struct {
@@ -48,6 +49,28 @@ func (r *MongoRepository) Save(ctx context.Context, video *Video) error {
 
 func (r *MongoRepository) ListAll(ctx context.Context) ([]Video, error) {
 	cursor, err := r.collection.Find(ctx, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var videos []Video
+	if err := cursor.All(ctx, &videos); err != nil {
+		return nil, err
+	}
+
+	return videos, nil
+}
+
+func (r *MongoRepository) Search(ctx context.Context, query string) ([]Video, error) {
+	filter := bson.M{
+		"filename": bson.M{
+			"$regex":   query,
+			"$options": "i", // Case-insensitive
+		},
+	}
+
+	cursor, err := r.collection.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}

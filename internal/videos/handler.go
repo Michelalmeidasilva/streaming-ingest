@@ -24,3 +24,21 @@ func (h *Handler) ListVideos(c *fiber.Ctx) error {
 		"videos": videos,
 	})
 }
+
+func (h *Handler) SearchVideos(c *fiber.Ctx) error {
+	query := c.Query("q")
+	if query == "" {
+		return h.ListVideos(c)
+	}
+
+	videos, err := h.service.SearchVideos(c.Context(), query)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"videos": videos,
+	})
+}
