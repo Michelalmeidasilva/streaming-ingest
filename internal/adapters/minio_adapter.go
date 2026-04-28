@@ -164,5 +164,10 @@ func (a *MinioAdapter) GenerateURL(bucket, key string) (string, error) {
 		return "", fmt.Errorf("failed to generate presigned url: %w", err)
 	}
 
-	return presignedURL.String(), nil
+	// Replace internal Docker hostname with public localhost for browser access
+	urlStr := presignedURL.String()
+	urlStr = strings.Replace(urlStr, "http://minio:9000", "http://localhost:9000", 1)
+	urlStr = strings.Replace(urlStr, "https://minio:9000", "http://localhost:9000", 1)
+
+	return urlStr, nil
 }
