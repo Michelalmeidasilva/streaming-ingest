@@ -19,7 +19,7 @@ type MinioAdapter struct {
 }
 
 func NewMinioAdapter() *MinioAdapter {
-	endpoint := os.Getenv("MINIO_ENDPOINT") // e.g. "localhost:9000"
+	endpoint := os.Getenv("MINIO_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "localhost:9000"
 	}
@@ -161,13 +161,11 @@ func (a *MinioAdapter) GenerateURL(bucket, key string) (string, error) {
 	expiry := time.Duration(3600) * time.Second
 	presignedURL, err := a.client.PresignedGetObject(context.Background(), bucket, key, expiry, nil)
 	if err != nil {
+		log.Printf("ERROR generating presigned URL for %s/%s: %v", bucket, key, err)
 		return "", fmt.Errorf("failed to generate presigned url: %w", err)
 	}
 
-	// Replace internal Docker hostname with public localhost for browser access
-	urlStr := presignedURL.String()
-	urlStr = strings.Replace(urlStr, "http://minio:9000", "http://localhost:9000", 1)
-	urlStr = strings.Replace(urlStr, "https://minio:9000", "http://localhost:9000", 1)
-
-	return urlStr, nil
+	url := presignedURL.String()
+	log.Printf("Generated presigned URL for %s/%s: %s", bucket, key, url)
+	return url, nil
 }
