@@ -48,7 +48,7 @@ func NewPublisher(url string) (*Publisher, error) {
 }
 
 func (p *Publisher) Publish(routingKey string, payload interface{}) error {
-	if p.channel == nil || p.conn == nil {
+	if p == nil || p.channel == nil || p.conn == nil {
 		return fmt.Errorf("publisher not initialized")
 	}
 
@@ -80,6 +80,10 @@ func (p *Publisher) Publish(routingKey string, payload interface{}) error {
 }
 
 func (p *Publisher) Close() {
+	if p == nil {
+		return
+	}
+
 	if p.channel != nil {
 		p.channel.Close()
 	}

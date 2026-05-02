@@ -1,33 +1,36 @@
 .PHONY: help deps dev build test stop
 
+GOCACHE ?= /private/tmp/go-cache
+
 help:
 	@echo "streaming-ingest targets:"
 	@echo "  deps              - Download and install Go dependencies"
-	@echo "  dev               - Run with go run ./cmd/api (port 8080)"
+	@echo "  dev               - Start infra if needed, then run go run ./cmd/api"
 	@echo "  build             - Compile binary to bin/ingest"
 	@echo "  test              - Run unit tests (excludes integration tests)"
 	@echo "  test-integration  - Run all tests including integration tests"
 	@echo "  stop              - Stop running instance"
 
 deps:
-	go mod tidy
-	go mod download
+	GOCACHE=$(GOCACHE) go mod tidy
+	GOCACHE=$(GOCACHE) go mod download
 	@echo "✓ Dependencies installed"
 
 dev: deps
-	go run ./cmd/api
+	@if lsof -ti tcp:8080 >/dev/null 2>&1; then lsof -ti tcp:8080 | xargs kill -9; fi
+	GOCACHE=$(GOCACHE) go run ./cmd/api
 
 build: deps
 	mkdir -p bin
-	go build -o bin/ingest ./cmd/api
+	GOCACHE=$(GOCACHE) go build -o bin/ingest ./cmd/api
 
 test: deps
-	go test -v -coverprofile=coverage.out ./internal/...
-	go tool cover -func=coverage.out
+	GOCACHE=$(GOCACHE) go test -v -coverprofile=coverage.out ./internal/...
+	GOCACHE=$(GOCACHE) go tool cover -func=coverage.out
 
 test-integration: deps
-	go test -v -tags integration ./internal/...
+	GOCACHE=$(GOCACHE) go test -v -tags integration ./internal/...
 
 stop:
-	pkill -f "go run.*cmd/api" || true
+	@if lsof -ti tcp:8080 >/dev/null 2>&1; then lsof -ti tcp:8080 | xargs kill -9; fi
 	@echo "✓ Stopped streaming-ingest"

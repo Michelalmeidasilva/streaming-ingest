@@ -2,11 +2,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"syscall"
+	"strings"
 	"time"
 
 	"streaming-ingest/internal/adapters"
@@ -22,6 +24,10 @@ import (
 )
 
 func main() {
+	if err := loadDotEnv(".env"); err != nil {
+		log.Printf("WARNING: could not load .env: %v", err)
+	}
+
 	// Initialize Fiber
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
@@ -32,23 +38,27 @@ func main() {
 	// Read Configs
 	rabbitMQURL := os.Getenv("RABBITMQ_URL")
 	if rabbitMQURL == "" {
-		rabbitMQURL = "amqp://guest:guest@localhost:5672/"
-	}
-
-	serverPort := os.Getenv("SERVER_PORT")
-	if serverPort == "" {
-		serverPort = "8080"
+		log.Fatal("RABBITMQ_URL is required")
 	}
 
 	mongoURI := os.Getenv("MONGODB_URI")
 	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017/streaming"
+		log.Fatal("MONGODB_URI is required")
 	}
 
-	// Connect to MongoDB
-	mongoClient, err := connectMongo(mongoURI)
+	var mongoClient *mongo.Client
+	var err error
+	maxMongoRetries := 10
+	for i := 0; i < maxMongoRetries; i++ {
+		mongoClient, err = connectMongo(mongoURI)
+		if err == nil {
+			break
+		}
+		log.Printf("Failed to connect to MongoDB, retrying in 2 seconds... (%d/%d): %v", i+1, maxMongoRetries, err)
+		time.Sleep(2 * time.Second)
+	}
 	if err != nil {
-		log.Fatalf("Could not ... connect to MongoDB: %v", err)
+		log.Fatalf("Could not connect to MongoDB at %s after retries. Start the infra stack with `cd ../infra && make up`: %v", mongoURI, err)
 	}
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -58,6 +68,7 @@ func main() {
 		}
 	}()
 	log.Println("Connected to MongoDB successfully.")
+	videoRepo := videos.NewMongoRepository(mongoClient, "streaming", "videos")
 
 	// Retry loop for RabbitMQ connection (since it may start slower in compose)
 	var pub *rabbitmq.Publisher
@@ -82,9 +93,6 @@ func main() {
 		"aws-s3": adapters.NewS3Adapter(),
 	}
 
-	// Instantiate Repository
-	videoRepo := videos.NewMongoRepository(mongoClient, "streaming", "videos")
-
 	// Instantiate Services & Handlers
 	eventsService := events.NewService(pub)
 	eventsHandler := events.NewHandler(eventsService)
@@ -105,7 +113,7 @@ func main() {
 	// Graceful Shutdown
 	go func() {
 		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+		signal.Notify(quit, os.Interrupt)
 		<-quit
 		log.Println("Gracefully shutting down server...")
 		if err := app.Shutdown(); err != nil {
@@ -113,8 +121,8 @@ func main() {
 		}
 	}()
 
-	log.Printf("Event Gateway starting on port %s...", serverPort)
-	if err := app.Listen(":" + serverPort); err != nil {
+	log.Println("Event Gateway starting on port 8080...")
+	if err := app.Listen(":8080"); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 }
@@ -135,4 +143,52 @@ func connectMongo(uri string) (*mongo.Client, error) {
 	}
 
 	return client, nil
+}
+
+func loadDotEnv(filename string) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+
+	var lineNum int
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "export ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		}
+
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			return fmt.Errorf("%s:%d: expected KEY=VALUE", filename, lineNum)
+		}
+
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" {
+			return fmt.Errorf("%s:%d: empty key", filename, lineNum)
+		}
+
+		value = strings.Trim(value, `"'`)
+		if _, exists := os.LookupEnv(key); !exists {
+			if err := os.Setenv(key, value); err != nil {
+				return fmt.Errorf("%s:%d: set %s: %w", filename, lineNum, key, err)
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("%s: %w", filename, err)
+	}
+
+	return nil
 }

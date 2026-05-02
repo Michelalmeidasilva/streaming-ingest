@@ -19,3 +19,6 @@ test-report.json
 
 # Vendor
 vendor/
+
+
+.env

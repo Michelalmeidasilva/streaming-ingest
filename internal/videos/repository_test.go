@@ -47,11 +47,11 @@ func TestNewMongoRepository(t *testing.T) {
 
 func TestMongoRepositorySave(t *testing.T) {
 	tests := []struct {
-		name     string
-		video    *Video
-		mockErr  error
-		wantErr  bool
-		errMsg   string
+		name    string
+		video   *Video
+		mockErr error
+		wantErr bool
+		errMsg  string
 	}{
 		{
 			name: "save valid video succeeds",
@@ -70,8 +70,8 @@ func TestMongoRepositorySave(t *testing.T) {
 		{
 			name: "save with database error",
 			video: &Video{
-				VideoID:   "test-vid-456",
-				Filename:  "test2.mp4",
+				VideoID:  "test-vid-456",
+				Filename: "test2.mp4",
 			},
 			mockErr: mongo.ErrClientDisconnected,
 			wantErr: true,
@@ -177,6 +177,59 @@ func TestMongoRepositorySearch(t *testing.T) {
 func TestVideoRepository_Interface(t *testing.T) {
 	// Compile-time assertion that MongoRepository implements VideoRepository
 	var _ VideoRepository = (*MongoRepository)(nil)
+}
+
+func TestMemoryRepository(t *testing.T) {
+	repo := NewMemoryRepository()
+
+	first := &Video{
+		VideoID:  "vid-1",
+		Filename: "intro.mp4",
+		Provider: "minio",
+		Status:   "uploaded",
+	}
+	if err := repo.Save(context.Background(), first); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	second := &Video{
+		VideoID:  "vid-2",
+		Filename: "lesson.mp4",
+		Provider: "minio",
+		Status:   "uploaded",
+	}
+	if err := repo.Save(context.Background(), second); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	updated := &Video{
+		VideoID:  "vid-1",
+		Filename: "intro-final.mp4",
+		Provider: "minio",
+		Status:   "ready",
+	}
+	if err := repo.Save(context.Background(), updated); err != nil {
+		t.Fatalf("Save() update error = %v", err)
+	}
+
+	all, err := repo.ListAll(context.Background())
+	if err != nil {
+		t.Fatalf("ListAll() error = %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("ListAll() len = %d, want 2", len(all))
+	}
+
+	found, err := repo.Search(context.Background(), "intro")
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(found) != 1 {
+		t.Fatalf("Search() len = %d, want 1", len(found))
+	}
+	if found[0].Filename != "intro-final.mp4" {
+		t.Fatalf("Search() filename = %s, want intro-final.mp4", found[0].Filename)
+	}
 }
 
 // MockVideoRepository is a test mock for VideoRepository

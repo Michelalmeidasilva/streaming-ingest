@@ -43,6 +43,14 @@ docker run --network vod-network \
   streaming-ingest
 ```
 
+### Option 1b: Use the Dev Target
+
+From `streaming-ingest`, `make dev` now brings up the shared infra stack first and then starts the Go API:
+
+```bash
+make dev
+```
+
 ### Option 2: Run Locally with Go
 
 ```bash
