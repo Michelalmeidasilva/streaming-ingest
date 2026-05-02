@@ -48,7 +48,7 @@ func main() {
 	// Connect to MongoDB
 	mongoClient, err := connectMongo(mongoURI)
 	if err != nil {
-		log.Fatalf("Could not connect to MongoDB: %v", err)
+		log.Fatalf("Could not ... connect to MongoDB: %v", err)
 	}
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
