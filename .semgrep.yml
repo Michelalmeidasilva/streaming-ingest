@@ -1,0 +1,64 @@
+rules:
+  - id: hardcoded-credentials
+    patterns:
+      - pattern-either:
+          - pattern: |
+              password = "..."
+          - pattern: |
+              secret = "..."
+          - pattern: |
+              apiKey = "..."
+          - pattern: |
+              token = "..."
+    message: Hardcoded credentials detected
+    languages: [go]
+    severity: CRITICAL
+
+  - id: command-injection
+    patterns:
+      - pattern-either:
+          - pattern: |
+              exec.Command($CMD, os.Args[...])
+          - pattern: |
+              exec.CommandContext($CTX, $CMD, ...)
+    message: Command injection vulnerability - validate user input before command execution
+    languages: [go]
+    severity: ERROR
+
+  - id: insecure-random
+    patterns:
+      - pattern: |
+          rand.Intn(...)
+    message: Use crypto/rand instead of math/rand for security-sensitive operations
+    languages: [go]
+    severity: WARNING
+
+  - id: tls-verification-disabled
+    patterns:
+      - pattern-either:
+          - pattern: |
+              InsecureSkipVerify = true
+          - pattern: |
+              &tls.Config{InsecureSkipVerify: true}
+    message: TLS verification disabled - exposes to MITM attacks
+    languages: [go]
+    severity: ERROR
+
+  - id: path-traversal
+    patterns:
+      - pattern: |
+          filepath.Join($USER_INPUT, ...)
+    message: Potential path traversal vulnerability - validate user input
+    languages: [go]
+    severity: ERROR
+
+  - id: xxe-vulnerability
+    patterns:
+      - pattern-either:
+          - pattern: |
+              xml.Unmarshal(...)
+          - pattern: |
+              xml.Decoder{...}
+    message: XML unmarshaling - disable XXE to prevent attacks
+    languages: [go]
+    severity: WARNING

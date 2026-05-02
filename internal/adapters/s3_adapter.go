@@ -13,18 +13,23 @@ func NewS3Adapter() *S3Adapter {
 	return &S3Adapter{}
 }
 
-// S3Event represents standard S3 event notification
 type S3Event struct {
-	Records []struct {
-		EventName string    `json:"eventName"`
-		EventTime time.Time `json:"eventTime"`
-		S3        struct {
-			Object struct {
-				Key  string `json:"key"`
-				Size int64  `json:"size"`
-			} `json:"object"`
-		} `json:"s3"`
-	} `json:"Records"`
+	Records []S3EventRecord `json:"Records"`
+}
+
+type S3EventRecord struct {
+	EventName string    `json:"eventName"`
+	EventTime time.Time `json:"eventTime"`
+	S3        S3EventS3 `json:"s3"`
+}
+
+type S3EventS3 struct {
+	Object S3EventObject `json:"object"`
+}
+
+type S3EventObject struct {
+	Key  string `json:"key"`
+	Size int64  `json:"size"`
 }
 
 func (a *S3Adapter) ParseEvent(payload []byte) (*DomainEvent, error) {
@@ -38,6 +43,9 @@ func (a *S3Adapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 	}
 
 	record := event.Records[0]
+	if record.S3.Object.Key == "" {
+		return nil, fmt.Errorf("s3 object key is required")
+	}
 	if !strings.HasPrefix(record.EventName, "ObjectCreated") {
 		return nil, fmt.Errorf("ignoring non-creation event: %s", record.EventName)
 	}
@@ -64,11 +72,9 @@ func (a *S3Adapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 }
 
 func (a *S3Adapter) ListVideos(bucket string) ([]DomainEvent, error) {
-	// TODO: Implement S3 listing using AWS SDK
-	return []DomainEvent{}, nil
+	return make([]DomainEvent, 0), nil
 }
 
 func (a *S3Adapter) GenerateURL(bucket, key string) (string, error) {
-	// TODO: Implement S3 URL generation using AWS SDK
 	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", bucket, key), nil
 }

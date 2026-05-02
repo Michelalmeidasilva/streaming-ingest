@@ -4,12 +4,16 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-type Handler struct {
-	service *Service
+type EventProcessor interface {
+	ProcessEvent(event FrontEndEvent) error
 }
 
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+type Handler struct {
+	processor EventProcessor
+}
+
+func NewHandler(processor EventProcessor) *Handler {
+	return &Handler{processor: processor}
 }
 
 func (h *Handler) ReceiveEvent(c *fiber.Ctx) error {
@@ -26,7 +30,7 @@ func (h *Handler) ReceiveEvent(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.service.ProcessEvent(event); err != nil {
+	if err := h.processor.ProcessEvent(event); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to process event",
 		})

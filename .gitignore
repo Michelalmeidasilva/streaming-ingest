@@ -1,0 +1,21 @@
+# Build
+/bin/
+*.o
+*.a
+*.so
+
+# Test coverage
+coverage.out
+coverage.html
+test-report.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Vendor
+vendor/

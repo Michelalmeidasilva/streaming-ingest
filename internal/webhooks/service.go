@@ -10,12 +10,12 @@ import (
 )
 
 type Service struct {
-	publisher *rabbitmq.Publisher
+	publisher rabbitmq.MessagePublisher
 	adapters  map[string]adapters.StorageAdapter
 	repo      videos.VideoRepository
 }
 
-func NewService(pub *rabbitmq.Publisher, storageAdapters map[string]adapters.StorageAdapter, repo videos.VideoRepository) *Service {
+func NewService(pub rabbitmq.MessagePublisher, storageAdapters map[string]adapters.StorageAdapter, repo videos.VideoRepository) *Service {
 	return &Service{
 		publisher: pub,
 		adapters:  storageAdapters,

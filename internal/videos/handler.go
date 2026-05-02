@@ -1,14 +1,20 @@
 package videos
 
 import (
+	"context"
 	"github.com/gofiber/fiber/v2"
 )
 
-type Handler struct {
-	service *Service
+type VideoService interface {
+	ListAllVideos(ctx context.Context) ([]VideoResponse, error)
+	SearchVideos(ctx context.Context, query string) ([]VideoResponse, error)
 }
 
-func NewHandler(service *Service) *Handler {
+type Handler struct {
+	service VideoService
+}
+
+func NewHandler(service VideoService) *Handler {
 	return &Handler{service: service}
 }
 

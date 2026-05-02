@@ -13,10 +13,10 @@ type FrontEndEvent struct {
 }
 
 type Service struct {
-	publisher *rabbitmq.Publisher
+	publisher rabbitmq.MessagePublisher
 }
 
-func NewService(pub *rabbitmq.Publisher) *Service {
+func NewService(pub rabbitmq.MessagePublisher) *Service {
 	return &Service{
 		publisher: pub,
 	}
@@ -28,6 +28,6 @@ func (s *Service) ProcessEvent(event FrontEndEvent) error {
 	if err != nil {
 		return fmt.Errorf("failed to process and publish event: %w", err)
 	}
-	
+
 	return nil
 }

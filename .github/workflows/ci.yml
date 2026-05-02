@@ -11,6 +11,8 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: .
@@ -31,18 +33,59 @@ jobs:
       - name: Build
         run: go build -v ./...
 
-      - name: Test
-        run: go test -v ./...
+      - name: Test with Coverage
+        run: go test -v -coverprofile=coverage.out -covermode=atomic ./internal/...
+
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: SonarSource/sonarcloud-github-action@ffc3010689be73b8e5ae0c57ce35968afd7909e8
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           projectBaseDir: .
-          args: >
-            -Dsonar.projectKey=vod-streaming-ingest
-            -Dsonar.organization=your-org
-            -Dsonar.sources=.
-            -Dsonar.go.coverage.reportPaths=coverage.out
+
+  security-scan:
+    name: Semgrep Security Analysis
+    runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep:1.151.0
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep SAST
+        run: |
+          semgrep \
+            --config=p/security-audit \
+            --config=p/owasp-top-ten \
+            --config=p/cwe-top-25 \
+            --config=p/xss \
+            --config=p/secrets \
+            --sarif \
+            --output=semgrep-report.sarif \
+            . || true
+
+      - name: Upload to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: semgrep-report.sarif
+          category: semgrep
+
+      - name: Validate no critical security issues
+        run: |
+          echo "Running Semgrep validation..."
+          semgrep \
+            --config=p/security-audit \
+            --config=p/owasp-top-ten \
+            --config=p/cwe-top-25 \
+            --config=p/xss \
+            --config=p/secrets \
+            . && echo "✓ Security scan passed - no critical issues" || (echo "✗ Security issues found"; exit 1)

@@ -26,8 +26,13 @@ type VideoRepository interface {
 	Search(ctx context.Context, query string) ([]Video, error)
 }
 
+type mongoCollection interface {
+	UpdateOne(ctx context.Context, filter, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error)
+	Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error)
+}
+
 type MongoRepository struct {
-	collection *mongo.Collection
+	collection mongoCollection
 }
 
 func NewMongoRepository(client *mongo.Client, dbName, collectionName string) *MongoRepository {

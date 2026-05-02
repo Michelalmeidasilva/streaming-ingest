@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -12,6 +11,10 @@ import (
 type Publisher struct {
 	conn    *amqp.Connection
 	channel *amqp.Channel
+}
+
+type MessagePublisher interface {
+	Publish(routingKey string, payload interface{}) error
 }
 
 func NewPublisher(url string) (*Publisher, error) {
@@ -45,6 +48,14 @@ func NewPublisher(url string) (*Publisher, error) {
 }
 
 func (p *Publisher) Publish(routingKey string, payload interface{}) error {
+	if p.channel == nil || p.conn == nil {
+		return fmt.Errorf("publisher not initialized")
+	}
+
+	if routingKey == "" {
+		return fmt.Errorf("routing key cannot be empty")
+	}
+
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
@@ -52,20 +63,19 @@ func (p *Publisher) Publish(routingKey string, payload interface{}) error {
 
 	err = p.channel.PublishWithContext(
 		context.Background(),
-		"video_events", // exchange
-		routingKey,     // routing key
-		false,          // mandatory
-		false,          // immediate
+		"video_events",
+		routingKey,
+		false,
+		false,
 		amqp.Publishing{
 			ContentType: "application/json",
 			Body:        body,
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("failed to publish a message: %w", err)
+		return fmt.Errorf("failed to publish message: %w", err)
 	}
 
-	log.Printf(" [x] Sent %s", routingKey)
 	return nil
 }
 

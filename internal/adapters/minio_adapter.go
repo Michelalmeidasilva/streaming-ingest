@@ -14,8 +14,27 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+type minioClientIface interface {
+	ListObjects(ctx context.Context, bucketName string, opts minio.ListObjectsOptions) <-chan minio.ObjectInfo
+	PresignedGetObject(ctx context.Context, bucketName, objectName string, expires time.Duration, reqParams url.Values) (*url.URL, error)
+}
+
 type MinioAdapter struct {
-	client *minio.Client
+	client minioClientIface
+}
+
+type MinioEventRecord struct {
+	EventTime time.Time    `json:"eventTime"`
+	S3        MinioEventS3 `json:"s3"`
+}
+
+type MinioEventS3 struct {
+	Object MinioEventObject `json:"object"`
+}
+
+type MinioEventObject struct {
+	Key  string `json:"key"`
+	Size int64  `json:"size"`
 }
 
 func NewMinioAdapter() *MinioAdapter {
@@ -23,17 +42,15 @@ func NewMinioAdapter() *MinioAdapter {
 	if endpoint == "" {
 		endpoint = "localhost:9000"
 	}
-	// Remove protocol if present
-	endpoint = strings.Replace(endpoint, "http://", "", 1)
-	endpoint = strings.Replace(endpoint, "https://", "", 1)
+	endpoint = strings.TrimPrefix(endpoint, "http://")
+	endpoint = strings.TrimPrefix(endpoint, "https://")
 
 	accessKey := os.Getenv("MINIO_ROOT_USER")
-	if accessKey == "" {
-		accessKey = "admin"
-	}
 	secretKey := os.Getenv("MINIO_ROOT_PASSWORD")
-	if secretKey == "" {
-		secretKey = "password123"
+
+	if accessKey == "" || secretKey == "" {
+		log.Println("WARNING: MinIO credentials not configured via environment variables")
+		return &MinioAdapter{client: nil}
 	}
 
 	client, err := minio.New(endpoint, &minio.Options{
@@ -41,7 +58,8 @@ func NewMinioAdapter() *MinioAdapter {
 		Secure: false,
 	})
 	if err != nil {
-		log.Printf("Failed to initialize MinIO client: %v", err)
+		log.Println("ERROR: Failed to initialize MinIO client")
+		return &MinioAdapter{client: nil}
 	}
 
 	return &MinioAdapter{client: client}
@@ -49,17 +67,9 @@ func NewMinioAdapter() *MinioAdapter {
 
 // MinioEvent represents the structure sent by MinIO webhooks
 type MinioEvent struct {
-	EventName string `json:"EventName"`
-	Key       string `json:"Key"`
-	Records   []struct {
-		EventTime time.Time `json:"eventTime"`
-		S3        struct {
-			Object struct {
-				Key  string `json:"key"`
-				Size int64  `json:"size"`
-			} `json:"object"`
-		} `json:"s3"`
-	} `json:"Records"`
+	EventName string             `json:"EventName"`
+	Key       string             `json:"Key"`
+	Records   []MinioEventRecord `json:"Records"`
 }
 
 func (a *MinioAdapter) ParseEvent(payload []byte) (*DomainEvent, error) {
@@ -73,6 +83,9 @@ func (a *MinioAdapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 	}
 
 	record := event.Records[0]
+	if record.S3.Object.Key == "" {
+		return nil, fmt.Errorf("minio object key is required")
+	}
 	// Unescape the key in case it's URL-encoded (common in some MinIO versions/configs)
 	rawKey := record.S3.Object.Key
 	if decodedKey, err := url.QueryUnescape(rawKey); err == nil {
@@ -161,11 +174,8 @@ func (a *MinioAdapter) GenerateURL(bucket, key string) (string, error) {
 	expiry := time.Duration(3600) * time.Second
 	presignedURL, err := a.client.PresignedGetObject(context.Background(), bucket, key, expiry, nil)
 	if err != nil {
-		log.Printf("ERROR generating presigned URL for %s/%s: %v", bucket, key, err)
 		return "", fmt.Errorf("failed to generate presigned url: %w", err)
 	}
 
-	url := presignedURL.String()
-	log.Printf("Generated presigned URL for %s/%s: %s", bucket, key, url)
-	return url, nil
+	return presignedURL.String(), nil
 }
