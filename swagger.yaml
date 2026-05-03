@@ -88,6 +88,26 @@ paths:
         '500':
           description: Erro interno ao listar objetos do storage
 
+  /videos/database:
+    get:
+      summary: Lista todos os vídeos registrados no banco de dados
+      description: Recupera diretamente os documentos de vídeo persistidos no MongoDB.
+      operationId: listDatabaseVideos
+      responses:
+        '200':
+          description: Lista de vídeos recuperada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  videos:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VideoRecord'
+        '500':
+          description: Erro interno ao listar vídeos do banco
+
 components:
   schemas:
     FrontEndEvent:
@@ -142,4 +162,32 @@ components:
         occurredAt:
           type: string
           format: date-time
+          example: "2026-04-21T18:00:00Z"
+
+    VideoRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "66a1234567890abcdef12345"
+        videoId:
+          type: string
+          example: "ebd23f99-c89b-43d9-a72a-1928fb211e40"
+        filename:
+          type: string
+          example: "meu-video-teste.mp4"
+        size:
+          type: integer
+          example: 10000000
+        provider:
+          type: string
+          example: "minio"
+        status:
+          type: string
+          example: "uploaded"
+        url:
+          type: string
+          example: "http://localhost:9000/videos/ebd23f99-c89b-43d9-a72a-1928fb211e40/meu-video-teste.mp4"
+        createdAt:
+          type: string
           example: "2026-04-21T18:00:00Z"

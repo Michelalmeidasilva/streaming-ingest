@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -54,11 +55,14 @@ func main() {
 		if err == nil {
 			break
 		}
+		if isMongoAuthError(err) {
+			log.Fatalf("MongoDB authentication failed for %s. Check the username, password, authSource, and cluster access: %v", redactMongoURI(mongoURI), err)
+		}
 		log.Printf("Failed to connect to MongoDB, retrying in 2 seconds... (%d/%d): %v", i+1, maxMongoRetries, err)
 		time.Sleep(2 * time.Second)
 	}
 	if err != nil {
-		log.Fatalf("Could not connect to MongoDB at %s after retries. Start the infra stack with `cd ../infra && make up`: %v", mongoURI, err)
+		log.Fatalf("Could not connect to MongoDB at %s after retries. Start the infra stack with `cd ../infra && make up`: %v", redactMongoURI(mongoURI), err)
 	}
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -69,6 +73,7 @@ func main() {
 	}()
 	log.Println("Connected to MongoDB successfully.")
 	videoRepo := videos.NewMongoRepository(mongoClient, "streaming", "videos")
+	eventRepo := events.NewMongoRepository(mongoClient, "streaming", "events")
 
 	// Retry loop for RabbitMQ connection (since it may start slower in compose)
 	var pub *rabbitmq.Publisher
@@ -94,7 +99,7 @@ func main() {
 	}
 
 	// Instantiate Services & Handlers
-	eventsService := events.NewService(pub)
+	eventsService := events.NewService(pub, eventRepo, videoRepo)
 	eventsHandler := events.NewHandler(eventsService)
 
 	webhookService := webhooks.NewService(pub, storageAdapters, videoRepo)
@@ -108,6 +113,7 @@ func main() {
 	v1.Post("/events", eventsHandler.ReceiveEvent)
 	v1.Post("/webhooks/storage/:provider", webhookHandler.HandleProviderWebhook)
 	v1.Get("/videos", videosHandler.ListVideos)
+	v1.Get("/videos/database", videosHandler.ListDatabaseVideos)
 	v1.Get("/videos/search", videosHandler.SearchVideos)
 
 	// Graceful Shutdown
@@ -145,6 +151,35 @@ func connectMongo(uri string) (*mongo.Client, error) {
 	return client, nil
 }
 
+func isMongoAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "authentication failed") ||
+		strings.Contains(msg, "unable to authenticate") ||
+		strings.Contains(msg, "sasl conversation error") ||
+		strings.Contains(msg, "atlaserror") && strings.Contains(msg, "bad auth")
+}
+
+func redactMongoURI(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "<redacted-mongodb-uri>"
+	}
+
+	if parsed.User != nil {
+		username := parsed.User.Username()
+		if username != "" {
+			parsed.User = url.User(username)
+		} else {
+			parsed.User = nil
+		}
+	}
+
+	return parsed.String()
+}
 func loadDotEnv(filename string) error {
 	f, err := os.Open(filename)
 	if err != nil {

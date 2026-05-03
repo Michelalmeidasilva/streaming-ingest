@@ -1,4 +1,6 @@
-.PHONY: help deps dev build test stop
+.PHONY: help deps dev build test test-mongo-integration test-integration stop
+
+GOCACHE ?= /private/tmp/go-cache
 
 GOCACHE ?= /private/tmp/go-cache
 
@@ -8,6 +10,7 @@ help:
 	@echo "  dev               - Start infra if needed, then run go run ./cmd/api"
 	@echo "  build             - Compile binary to bin/ingest"
 	@echo "  test              - Run unit tests (excludes integration tests)"
+	@echo "  test-mongo-integration - Run MongoDB persistence integration tests"
 	@echo "  test-integration  - Run all tests including integration tests"
 	@echo "  stop              - Stop running instance"
 
@@ -27,6 +30,10 @@ build: deps
 test: deps
 	GOCACHE=$(GOCACHE) go test -v -coverprofile=coverage.out ./internal/...
 	GOCACHE=$(GOCACHE) go tool cover -func=coverage.out
+
+test-mongo-integration: deps
+	@if [ -z "$$MONGODB_URI" ]; then echo "MONGODB_URI is required"; exit 1; fi
+	GOCACHE=$(GOCACHE) go test -v ./internal/videos ./internal/webhooks ./cmd/api
 
 test-integration: deps
 	GOCACHE=$(GOCACHE) go test -v -tags integration ./internal/...

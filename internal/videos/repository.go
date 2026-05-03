@@ -2,6 +2,7 @@ package videos
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -10,23 +11,25 @@ import (
 )
 
 type Video struct {
-	ID         string    `bson:"_id,omitempty" json:"id"`
-	VideoID    string    `bson:"video_id" json:"videoId"`
-	Filename   string    `bson:"filename" json:"filename"`
-	Size       int64     `bson:"size" json:"size"`
-	Provider   string    `bson:"provider" json:"provider"`
-	Status     string    `bson:"status" json:"status"`
-	CreatedAt  time.Time `bson:"created_at" json:"createdAt"`
-	UpdatedAt  time.Time `bson:"updated_at" json:"updatedAt"`
+	ID        string    `bson:"_id,omitempty" json:"id"`
+	VideoID   string    `bson:"video_id" json:"videoId"`
+	Filename  string    `bson:"filename" json:"filename"`
+	Size      int64     `bson:"size" json:"size"`
+	Provider  string    `bson:"provider" json:"provider"`
+	Status    string    `bson:"status" json:"status"`
+	CreatedAt time.Time `bson:"created_at" json:"createdAt"`
+	UpdatedAt time.Time `bson:"updated_at" json:"updatedAt"`
 }
 
 type VideoRepository interface {
+	Create(ctx context.Context, video *Video) error
 	Save(ctx context.Context, video *Video) error
 	ListAll(ctx context.Context) ([]Video, error)
 	Search(ctx context.Context, query string) ([]Video, error)
 }
 
 type mongoCollection interface {
+	InsertOne(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error)
 	UpdateOne(ctx context.Context, filter, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error)
 	Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error)
 }
@@ -49,6 +52,17 @@ func (r *MongoRepository) Save(ctx context.Context, video *Video) error {
 	opts := options.Update().SetUpsert(true)
 
 	_, err := r.collection.UpdateOne(ctx, filter, update, opts)
+	if err != nil {
+		fmt.Printf("error saving video to database: %v\n", err)
+	}
+	return err
+}
+
+func (r *MongoRepository) Create(ctx context.Context, video *Video) error {
+	_, err := r.collection.InsertOne(ctx, video)
+	if err != nil {
+		fmt.Printf("error inserting video to database: %v\n", err)
+	}
 	return err
 }
 

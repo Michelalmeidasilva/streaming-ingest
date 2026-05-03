@@ -19,6 +19,26 @@ go tool cover -html=coverage.out
 
 Integration tests require external services (RabbitMQ, MongoDB) to be running.
 
+### MongoDB Persistence Tests
+
+These tests validate that videos are persisted in MongoDB when:
+- a storage upload webhook is processed
+- the service syncs videos while listing them
+
+Run them with:
+```bash
+export MONGODB_URI=mongodb://admin:password@localhost:27017/streaming
+make test-mongo-integration
+```
+
+Or run the same packages directly:
+```bash
+GOCACHE=/private/tmp/go-cache MONGODB_URI=mongodb://admin:password@localhost:27017/streaming \
+  go test -v ./internal/videos ./internal/webhooks ./cmd/api
+```
+
+If `MONGODB_URI` is missing or MongoDB is unreachable, the tests skip gracefully.
+
 ### Run Integration Tests Only
 
 ```bash

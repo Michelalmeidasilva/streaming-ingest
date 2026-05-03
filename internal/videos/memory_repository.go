@@ -17,6 +17,10 @@ func NewMemoryRepository() *MemoryRepository {
 	}
 }
 
+func (r *MemoryRepository) Create(ctx context.Context, video *Video) error {
+	return r.Save(ctx, video)
+}
+
 func (r *MemoryRepository) Save(ctx context.Context, video *Video) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

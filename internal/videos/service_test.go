@@ -11,8 +11,8 @@ import (
 )
 
 type mockStorageAdapter struct {
-	listVideosResult []adapters.DomainEvent
-	listVideosErr    error
+	listVideosResult  []adapters.DomainEvent
+	listVideosErr     error
 	generateURLResult string
 	generateURLErr    error
 }
@@ -34,10 +34,16 @@ type mockVideoRepository struct {
 	listAllErr    error
 	searchResult  []Video
 	searchErr     error
+	saveErr       error
+	createErr     error
+}
+
+func (m *mockVideoRepository) Create(ctx context.Context, video *Video) error {
+	return m.createErr
 }
 
 func (m *mockVideoRepository) Save(ctx context.Context, video *Video) error {
-	return nil
+	return m.saveErr
 }
 
 func (m *mockVideoRepository) ListAll(ctx context.Context) ([]Video, error) {
@@ -70,11 +76,11 @@ func TestNewService(t *testing.T) {
 
 func TestListAllVideos(t *testing.T) {
 	tests := []struct {
-		name           string
-		mockAdapter    mockStorageAdapter
-		mockRepo       mockVideoRepository
-		wantErr        bool
-		wantLen        int
+		name        string
+		mockAdapter mockStorageAdapter
+		mockRepo    mockVideoRepository
+		wantErr     bool
+		wantLen     int
 	}{
 		{
 			name:        "repo_list_fails",
@@ -91,7 +97,7 @@ func TestListAllVideos(t *testing.T) {
 			wantLen:     0,
 		},
 		{
-			name:     "with_videos_adapter_exists_url_ok",
+			name: "with_videos_adapter_exists_url_ok",
 			mockAdapter: mockStorageAdapter{
 				generateURLResult: "http://minio:9000/videos/vid1/file.mp4",
 				generateURLErr:    nil,
@@ -110,7 +116,7 @@ func TestListAllVideos(t *testing.T) {
 			wantLen: 1,
 		},
 		{
-			name:     "with_videos_adapter_url_fails",
+			name: "with_videos_adapter_url_fails",
 			mockAdapter: mockStorageAdapter{
 				generateURLResult: "",
 				generateURLErr:    errors.New("presign error"),
@@ -121,6 +127,44 @@ func TestListAllVideos(t *testing.T) {
 						VideoID:   "vid1",
 						Filename:  "file.mp4",
 						Provider:  "minio",
+						CreatedAt: time.Now(),
+					},
+				},
+			},
+			wantErr: false,
+			wantLen: 1,
+		},
+		{
+			name: "mongo_first_and_storage_match",
+			mockAdapter: mockStorageAdapter{
+				listVideosResult: []adapters.DomainEvent{
+					{
+						VideoID:    "vid1",
+						Filename:   "file.mp4",
+						Size:       222,
+						Provider:   "minio",
+						EventType:  "upload.completed",
+						OccurredAt: time.Now(),
+					},
+					{
+						VideoID:    "vid2",
+						Filename:   "extra.mp4",
+						Size:       333,
+						Provider:   "minio",
+						EventType:  "upload.completed",
+						OccurredAt: time.Now(),
+					},
+				},
+				generateURLResult: "http://minio:9000/videos/vid1/file.mp4",
+			},
+			mockRepo: mockVideoRepository{
+				listAllResult: []Video{
+					{
+						VideoID:   "vid1",
+						Filename:  "file.mp4",
+						Size:      111,
+						Provider:  "minio",
+						Status:    "uploaded",
 						CreatedAt: time.Now(),
 					},
 				},
@@ -145,6 +189,68 @@ func TestListAllVideos(t *testing.T) {
 
 			if len(got) != tt.wantLen {
 				t.Errorf("ListAllVideos() len = %d, want %d", len(got), tt.wantLen)
+			}
+
+			if tt.name == "mongo_first_and_storage_match" {
+				if len(got) != 1 {
+					t.Fatalf("ListAllVideos() len = %d, want 1", len(got))
+				}
+				if got[0].VideoID != "vid1" || got[0].Status != "uploaded" {
+					t.Fatalf("item = %+v, want mongo item enriched by storage", got[0])
+				}
+			}
+		})
+	}
+}
+
+func TestListDatabaseVideosService(t *testing.T) {
+	tests := []struct {
+		name     string
+		mockRepo mockVideoRepository
+		wantErr  bool
+		wantLen  int
+	}{
+		{
+			name:     "repo_list_fails",
+			mockRepo: mockVideoRepository{listAllErr: errors.New("db error")},
+			wantErr:  true,
+			wantLen:  0,
+		},
+		{
+			name:     "no_videos",
+			mockRepo: mockVideoRepository{listAllResult: []Video{}},
+			wantErr:  false,
+			wantLen:  0,
+		},
+		{
+			name: "with_videos",
+			mockRepo: mockVideoRepository{
+				listAllResult: []Video{
+					{
+						VideoID:   "vid1",
+						Filename:  "file.mp4",
+						Provider:  "minio",
+						CreatedAt: time.Now(),
+					},
+				},
+			},
+			wantErr: false,
+			wantLen: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewService(map[string]adapters.StorageAdapter{}, &tt.mockRepo)
+
+			got, err := svc.ListDatabaseVideos(context.Background())
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ListDatabaseVideos() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if len(got) != tt.wantLen {
+				t.Errorf("ListDatabaseVideos() len = %d, want %d", len(got), tt.wantLen)
 			}
 		})
 	}
@@ -186,13 +292,31 @@ func TestSyncVideosFromStorage(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name:      "list_videos_fails_continue",
+			name:      "list_videos_fails",
 			envBucket: "",
 			mockAdapter: mockStorageAdapter{
 				listVideosErr: errors.New("s3 error"),
 			},
 			mockRepo: mockVideoRepository{},
-			wantErr:  false,
+			wantErr:  true,
+		},
+		{
+			name:      "save_fails",
+			envBucket: "",
+			mockAdapter: mockStorageAdapter{
+				listVideosResult: []adapters.DomainEvent{
+					{
+						VideoID:    "vid1",
+						Filename:   "file.mp4",
+						Size:       1024,
+						Provider:   "minio",
+						EventType:  "upload.completed",
+						OccurredAt: time.Now(),
+					},
+				},
+			},
+			mockRepo: mockVideoRepository{saveErr: errors.New("mongo write failed")},
+			wantErr:  true,
 		},
 	}
 

@@ -3,6 +3,9 @@ package videos
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,11 +15,23 @@ import (
 
 // mockCollection is a mock implementation of mongoCollection for testing
 type mockCollection struct {
+	insertOneFunc func(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error)
 	updateOneFunc func(ctx context.Context, filter, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error)
 	findFunc      func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error)
+	insertCalls   int
+	updateCalls   int
+}
+
+func (m *mockCollection) InsertOne(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error) {
+	m.insertCalls++
+	if m.insertOneFunc != nil {
+		return m.insertOneFunc(ctx, document, opts...)
+	}
+	return &mongo.InsertOneResult{}, nil
 }
 
 func (m *mockCollection) UpdateOne(ctx context.Context, filter, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error) {
+	m.updateCalls++
 	if m.updateOneFunc != nil {
 		return m.updateOneFunc(ctx, filter, update, opts...)
 	}
@@ -88,13 +103,95 @@ func TestMongoRepositorySave(t *testing.T) {
 			}
 
 			repo := &MongoRepository{collection: mock}
-			err := repo.Save(context.Background(), tt.video)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Save() error = %v, wantErr %v", err, tt.wantErr)
+			stdout := os.Stdout
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatalf("os.Pipe() error = %v", err)
 			}
-			if tt.wantErr && err != nil && tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
-				t.Errorf("Save() error %q should contain %q", err.Error(), tt.errMsg)
+			os.Stdout = w
+
+			saveErr := repo.Save(context.Background(), tt.video)
+
+			if err := w.Close(); err != nil {
+				t.Fatalf("close stdout writer: %v", err)
+			}
+			os.Stdout = stdout
+
+			out, err := io.ReadAll(r)
+			if err != nil {
+				t.Fatalf("read stdout: %v", err)
+			}
+			_ = r.Close()
+
+			if (saveErr != nil) != tt.wantErr {
+				t.Errorf("Save() error = %v, wantErr %v", saveErr, tt.wantErr)
+			}
+			if tt.wantErr && saveErr != nil && tt.errMsg != "" && !contains(saveErr.Error(), tt.errMsg) {
+				t.Errorf("Save() error %q should contain %q", saveErr.Error(), tt.errMsg)
+			}
+			if tt.wantErr && !strings.Contains(string(out), "error saving video to database") {
+				t.Errorf("expected stdout to contain save error message, got %q", string(out))
+			}
+			if mock.updateCalls != 1 {
+				t.Errorf("UpdateOne() calls = %d, want 1", mock.updateCalls)
+			}
+		})
+	}
+}
+
+func TestMongoRepositoryCreate(t *testing.T) {
+	tests := []struct {
+		name    string
+		video   *Video
+		mockErr error
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "create valid video succeeds",
+			video: &Video{
+				VideoID:   "test-vid-123",
+				Filename:  "test.mp4",
+				Size:      1024,
+				Provider:  "minio",
+				Status:    "uploading",
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			},
+			mockErr: nil,
+			wantErr: false,
+		},
+		{
+			name: "create with database error",
+			video: &Video{
+				VideoID:  "test-vid-456",
+				Filename: "test2.mp4",
+			},
+			mockErr: mongo.ErrClientDisconnected,
+			wantErr: true,
+			errMsg:  "disconnected",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockCollection{
+				insertOneFunc: func(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error) {
+					return &mongo.InsertOneResult{}, tt.mockErr
+				},
+			}
+
+			repo := &MongoRepository{collection: mock}
+			createErr := repo.Create(context.Background(), tt.video)
+
+			if (createErr != nil) != tt.wantErr {
+				t.Errorf("Create() error = %v, wantErr %v", createErr, tt.wantErr)
+			}
+			if tt.wantErr && createErr != nil && tt.errMsg != "" && !contains(createErr.Error(), tt.errMsg) {
+				t.Errorf("Create() error %q should contain %q", createErr.Error(), tt.errMsg)
+			}
+			if mock.insertCalls != 1 {
+				t.Errorf("InsertOne() calls = %d, want 1", mock.insertCalls)
 			}
 		})
 	}
@@ -234,9 +331,17 @@ func TestMemoryRepository(t *testing.T) {
 
 // MockVideoRepository is a test mock for VideoRepository
 type MockVideoRepository struct {
+	CreateFunc  func(ctx context.Context, video *Video) error
 	SaveFunc    func(ctx context.Context, video *Video) error
 	ListAllFunc func(ctx context.Context) ([]Video, error)
 	SearchFunc  func(ctx context.Context, query string) ([]Video, error)
+}
+
+func (m *MockVideoRepository) Create(ctx context.Context, video *Video) error {
+	if m.CreateFunc != nil {
+		return m.CreateFunc(ctx, video)
+	}
+	return nil
 }
 
 func (m *MockVideoRepository) Save(ctx context.Context, video *Video) error {

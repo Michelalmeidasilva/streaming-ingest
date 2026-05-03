@@ -41,3 +41,48 @@ func TestLoadDotEnvDoesNotOverrideExistingVariables(t *testing.T) {
 		t.Fatalf("expected TEST_KEEP to remain from-env, got %q", got)
 	}
 }
+
+func TestIsMongoAuthError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "auth failed",
+			err:  testError("authentication failed"),
+			want: true,
+		},
+		{
+			name: "sasl conversation",
+			err:  testError("connection() error occurred during connection handshake: auth error: sasl conversation error: unable to authenticate using mechanism \"SCRAM-SHA-1\""),
+			want: true,
+		},
+		{
+			name: "other failure",
+			err:  testError("connection refused"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isMongoAuthError(tt.err); got != tt.want {
+				t.Fatalf("isMongoAuthError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactMongoURI(t *testing.T) {
+	got := redactMongoURI("mongodb+srv://user:secret@cluster0.example.mongodb.net/db?retryWrites=true&w=majority")
+	want := "mongodb+srv://user@cluster0.example.mongodb.net/db?retryWrites=true&w=majority"
+
+	if got != want {
+		t.Fatalf("redactMongoURI() = %q, want %q", got, want)
+	}
+}
+
+type testError string
+
+func (e testError) Error() string { return string(e) }

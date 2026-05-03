@@ -41,6 +41,10 @@ type mockVideoRepository struct {
 	saveErr error
 }
 
+func (m *mockVideoRepository) Create(ctx context.Context, video *videos.Video) error {
+	return nil
+}
+
 func (m *mockVideoRepository) Save(ctx context.Context, video *videos.Video) error {
 	return m.saveErr
 }
@@ -80,14 +84,14 @@ func TestNewService(t *testing.T) {
 
 func TestProcessWebhook(t *testing.T) {
 	tests := []struct {
-		name             string
-		provider         string
-		adapters         map[string]adapters.StorageAdapter
-		mockAdapter      *mockStorageAdapter
-		mockRepo         *mockVideoRepository
-		mockPublisher    *mockPublisher
-		wantErr          bool
-		errMsg           string
+		name          string
+		provider      string
+		adapters      map[string]adapters.StorageAdapter
+		mockAdapter   *mockStorageAdapter
+		mockRepo      *mockVideoRepository
+		mockPublisher *mockPublisher
+		wantErr       bool
+		errMsg        string
 	}{
 		{
 			name:     "unsupported_provider",

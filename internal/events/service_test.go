@@ -1,13 +1,26 @@
 package events
 
 import (
+	"context"
 	"errors"
 	"testing"
+
+	"streaming-ingest/internal/videos"
 )
 
 type mockPublisher struct {
 	publishErr error
 	calledWith []string
+}
+
+type mockEventRepository struct {
+	saveErr error
+	saved   []*EventRecord
+}
+
+type mockVideoRepository struct {
+	createErr error
+	created   []*videos.Video
 }
 
 func (m *mockPublisher) Publish(routingKey string, payload interface{}) error {
@@ -17,7 +30,9 @@ func (m *mockPublisher) Publish(routingKey string, payload interface{}) error {
 
 func TestNewService(t *testing.T) {
 	mock := &mockPublisher{}
-	svc := NewService(mock)
+	mockRepo := &mockEventRepository{}
+	mockVideoRepo := &mockVideoRepository{}
+	svc := NewService(mock, mockRepo, mockVideoRepo)
 
 	if svc == nil {
 		t.Errorf("NewService() returned nil")
@@ -26,45 +41,74 @@ func TestNewService(t *testing.T) {
 	if svc.publisher != mock {
 		t.Errorf("NewService() did not set publisher correctly")
 	}
+
+	if svc.repo != mockRepo {
+		t.Errorf("NewService() did not set repo correctly")
+	}
+
+	if svc.videoRepo != mockVideoRepo {
+		t.Errorf("NewService() did not set video repo correctly")
+	}
 }
 
 func TestProcessEvent(t *testing.T) {
 	tests := []struct {
-		name      string
-		event     FrontEndEvent
-		publishErr error
-		wantErr   bool
-		wantKey   string
+		name        string
+		event       FrontEndEvent
+		publishErr  error
+		saveErr     error
+		wantErr     bool
+		wantKey     string
+		wantSaveLen int
+		wantCreate  int
 	}{
+		{
+			name: "save_fails",
+			event: FrontEndEvent{
+				EventType: "upload.progress",
+				Payload:   EventPayload{"videoId": "vid-1", "filename": "video.mp4"},
+			},
+			saveErr:     errors.New("db down"),
+			wantErr:     true,
+			wantKey:     "",
+			wantSaveLen: 1,
+			wantCreate:  0,
+		},
 		{
 			name: "publish_fails",
 			event: FrontEndEvent{
 				EventType: "upload.progress",
-				Payload:   EventPayload{"data": "test"},
+				Payload:   EventPayload{"videoId": "vid-1", "filename": "video.mp4"},
 			},
-			publishErr: errors.New("amqp down"),
-			wantErr:    true,
-			wantKey:    "video.upload.progress",
+			publishErr:  errors.New("amqp down"),
+			wantErr:     true,
+			wantKey:     "video.upload.progress",
+			wantSaveLen: 1,
+			wantCreate:  0,
 		},
 		{
 			name: "success",
 			event: FrontEndEvent{
 				EventType: "upload.progress",
-				Payload:   EventPayload{"data": "test"},
+				Payload:   EventPayload{"videoId": "vid-1", "filename": "video.mp4", "size": 123},
 			},
-			publishErr: nil,
-			wantErr:    false,
-			wantKey:    "video.upload.progress",
+			publishErr:  nil,
+			wantErr:     false,
+			wantKey:     "video.upload.progress",
+			wantSaveLen: 1,
+			wantCreate:  0,
 		},
 		{
 			name: "different_event_type",
 			event: FrontEndEvent{
 				EventType: "upload.completed",
-				Payload:   EventPayload{"videoID": "123"},
+				Payload:   EventPayload{"videoID": "123", "filename": "done.mp4"},
 			},
-			publishErr: nil,
-			wantErr:    false,
-			wantKey:    "video.upload.completed",
+			publishErr:  nil,
+			wantErr:     false,
+			wantKey:     "video.upload.completed",
+			wantSaveLen: 1,
+			wantCreate:  0,
 		},
 		{
 			name: "event_type_with_dots",
@@ -72,9 +116,11 @@ func TestProcessEvent(t *testing.T) {
 				EventType: "transcode.started",
 				Payload:   EventPayload{"rendition": "1080p"},
 			},
-			publishErr: nil,
-			wantErr:    false,
-			wantKey:    "video.transcode.started",
+			publishErr:  nil,
+			wantErr:     false,
+			wantKey:     "video.transcode.started",
+			wantSaveLen: 1,
+			wantCreate:  0,
 		},
 		{
 			name: "empty_payload",
@@ -82,16 +128,35 @@ func TestProcessEvent(t *testing.T) {
 				EventType: "ping",
 				Payload:   EventPayload{},
 			},
-			publishErr: nil,
-			wantErr:    false,
-			wantKey:    "video.ping",
+			publishErr:  nil,
+			wantErr:     false,
+			wantKey:     "video.ping",
+			wantSaveLen: 1,
+			wantCreate:  0,
+		},
+		{
+			name: "upload_started_creates_video_record",
+			event: FrontEndEvent{
+				EventType: "upload.started",
+				Payload:   EventPayload{"videoId": "vid-1", "filename": "video.mp4", "totalBytes": 1234},
+			},
+			publishErr:  nil,
+			wantErr:     false,
+			wantKey:     "video.upload.started",
+			wantSaveLen: 1,
+			wantCreate:  1,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockPublisher{publishErr: tt.publishErr}
-			svc := &Service{publisher: mock}
+			mockRepo := &mockEventRepository{saveErr: tt.saveErr}
+			mockVideoRepo := &mockVideoRepository{}
+			if tt.name == "upload_started_creates_video_record" {
+				mockVideoRepo = &mockVideoRepository{}
+			}
+			svc := &Service{publisher: mock, repo: mockRepo, videoRepo: mockVideoRepo}
 
 			err := svc.ProcessEvent(tt.event)
 
@@ -103,9 +168,47 @@ func TestProcessEvent(t *testing.T) {
 				t.Errorf("ProcessEvent() routingKey = %v, want %v", mock.calledWith[0], tt.wantKey)
 			}
 
-			if tt.wantErr && err != nil && !contains(err.Error(), "failed to process and publish event") {
+			if len(mockRepo.saved) != tt.wantSaveLen {
+				t.Errorf("ProcessEvent() saved len = %d, want %d", len(mockRepo.saved), tt.wantSaveLen)
+			}
+
+			if len(mockVideoRepo.created) != tt.wantCreate {
+				t.Errorf("ProcessEvent() created len = %d, want %d", len(mockVideoRepo.created), tt.wantCreate)
+			}
+
+			if tt.saveErr != nil && err != nil && !contains(err.Error(), "failed to save event metadata") {
+				t.Errorf("ProcessEvent() error = %v, want to contain 'failed to save event metadata'", err.Error())
+			}
+
+			if tt.saveErr == nil && tt.publishErr != nil && err != nil && !contains(err.Error(), "failed to process and publish event") {
 				t.Errorf("ProcessEvent() error = %v, want to contain 'failed to process and publish event'", err.Error())
 			}
 		})
 	}
+}
+
+func (m *mockEventRepository) Save(ctx context.Context, event *EventRecord) error {
+	if event != nil {
+		m.saved = append(m.saved, event)
+	}
+	return m.saveErr
+}
+
+func (m *mockVideoRepository) Create(ctx context.Context, video *videos.Video) error {
+	if video != nil {
+		m.created = append(m.created, video)
+	}
+	return m.createErr
+}
+
+func (m *mockVideoRepository) Save(ctx context.Context, video *videos.Video) error {
+	return nil
+}
+
+func (m *mockVideoRepository) ListAll(ctx context.Context) ([]videos.Video, error) {
+	return nil, nil
+}
+
+func (m *mockVideoRepository) Search(ctx context.Context, query string) ([]videos.Video, error) {
+	return nil, nil
 }

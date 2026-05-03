@@ -7,6 +7,7 @@ import (
 
 type VideoService interface {
 	ListAllVideos(ctx context.Context) ([]VideoResponse, error)
+	ListDatabaseVideos(ctx context.Context) ([]VideoResponse, error)
 	SearchVideos(ctx context.Context, query string) ([]VideoResponse, error)
 }
 
@@ -20,6 +21,19 @@ func NewHandler(service VideoService) *Handler {
 
 func (h *Handler) ListVideos(c *fiber.Ctx) error {
 	videos, err := h.service.ListAllVideos(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"videos": videos,
+	})
+}
+
+func (h *Handler) ListDatabaseVideos(c *fiber.Ctx) error {
+	videos, err := h.service.ListDatabaseVideos(c.Context())
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
