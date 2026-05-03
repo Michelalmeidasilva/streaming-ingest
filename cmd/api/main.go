@@ -16,6 +16,7 @@ import (
 	"streaming-ingest/internal/adapters"
 	"streaming-ingest/internal/events"
 	"streaming-ingest/internal/rabbitmq"
+	"streaming-ingest/internal/uploadstate"
 	"streaming-ingest/internal/videos"
 	"streaming-ingest/internal/webhooks"
 
@@ -57,6 +58,7 @@ func main() {
 	log.Println("Connected to MongoDB successfully.")
 	videoRepo := videos.NewMongoRepository(mongoClient, "streaming", "videos")
 	eventRepo := events.NewMongoRepository(mongoClient, "streaming", "events")
+	uploadStateRepo := uploadstate.NewMongoRepository(mongoClient, "streaming", "upload_sessions", "videos")
 
 	pub, err := retry(10, 2*time.Second, func() (*rabbitmq.Publisher, error) {
 		return rabbitmq.NewPublisher(rabbitMQURL)
@@ -80,8 +82,10 @@ func main() {
 
 	videosService := videos.NewService(storageAdapters, videoRepo)
 	videosHandler := videos.NewHandler(videosService)
+	uploadStateService := uploadstate.NewService(uploadStateRepo)
+	uploadStateHandler := uploadstate.NewHandler(uploadStateService)
 
-	registerRoutes(app, eventsHandler, webhookHandler, videosHandler)
+	registerRoutes(app, eventsHandler, webhookHandler, videosHandler, uploadStateHandler)
 
 	installGracefulShutdown(app, nil)
 
@@ -107,13 +111,21 @@ func requireEnv(key string) string {
 	return value
 }
 
-func registerRoutes(app *fiber.App, eventsHandler *events.Handler, webhookHandler *webhooks.Handler, videosHandler *videos.Handler) {
+func registerRoutes(app *fiber.App, eventsHandler *events.Handler, webhookHandler *webhooks.Handler, videosHandler *videos.Handler, uploadStateHandler *uploadstate.Handler) {
 	v1 := app.Group("/api/v1")
 	v1.Post("/events", eventsHandler.ReceiveEvent)
 	v1.Post("/webhooks/storage/:provider", webhookHandler.HandleProviderWebhook)
 	v1.Get("/videos", videosHandler.ListVideos)
 	v1.Get("/videos/database", videosHandler.ListDatabaseVideos)
 	v1.Get("/videos/search", videosHandler.SearchVideos)
+	v1.Put("/upload-state/sessions/:sessionId", uploadStateHandler.SaveState)
+	v1.Get("/upload-state/sessions/:sessionId", uploadStateHandler.GetState)
+	v1.Delete("/upload-state/sessions/:sessionId", uploadStateHandler.DeleteSession)
+	v1.Put("/upload-state/videos/:videoId", uploadStateHandler.SaveVideo)
+	v1.Get("/upload-state/videos", uploadStateHandler.ListVideos)
+	v1.Get("/upload-state/videos/:videoId", uploadStateHandler.GetVideo)
+	v1.Patch("/upload-state/videos/:videoId", uploadStateHandler.PatchVideo)
+	v1.Delete("/upload-state/videos/:videoId", uploadStateHandler.DeleteVideo)
 }
 
 func createStorageAdapters() map[string]adapters.StorageAdapter {

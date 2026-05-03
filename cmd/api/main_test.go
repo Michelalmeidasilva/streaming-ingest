@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"streaming-ingest/internal/events"
+	"streaming-ingest/internal/uploadstate"
 	"streaming-ingest/internal/videos"
 	"streaming-ingest/internal/webhooks"
 )
@@ -83,6 +84,7 @@ func TestNewAppAndRegisterRoutes(t *testing.T) {
 		events.NewHandler(events.NewService(nil, nil, nil)),
 		webhooks.NewHandler(webhooks.NewService(nil, nil, videos.NewMemoryRepository())),
 		videos.NewHandler(videos.NewService(nil, videos.NewMemoryRepository())),
+		uploadstate.NewHandler(uploadstate.NewService(nil)),
 	)
 
 	req := httptest.NewRequest("GET", "/api/v1/videos", nil)
