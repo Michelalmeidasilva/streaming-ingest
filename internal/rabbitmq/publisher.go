@@ -8,9 +8,60 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-type Publisher struct {
-	conn    *amqp.Connection
+type connectionAPI interface {
+	Channel() (channelAPI, error)
+	Close() error
+}
+
+type channelAPI interface {
+	ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
+	PublishWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+	Close() error
+}
+
+type amqpConnection struct {
+	conn *amqp.Connection
+}
+
+func (c *amqpConnection) Channel() (channelAPI, error) {
+	ch, err := c.conn.Channel()
+	if err != nil {
+		return nil, err
+	}
+	return &amqpChannel{channel: ch}, nil
+}
+
+func (c *amqpConnection) Close() error {
+	return c.conn.Close()
+}
+
+type amqpChannel struct {
 	channel *amqp.Channel
+}
+
+func (c *amqpChannel) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+	return c.channel.ExchangeDeclare(name, kind, durable, autoDelete, internal, noWait, args)
+}
+
+func (c *amqpChannel) PublishWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+	return c.channel.PublishWithContext(ctx, exchange, key, mandatory, immediate, msg)
+}
+
+func (c *amqpChannel) Close() error {
+	return c.channel.Close()
+}
+
+var dialAMQP = func(url string) (connectionAPI, error) {
+	conn, err := amqp.Dial(url)
+	if err != nil {
+		return nil, err
+	}
+	return &amqpConnection{conn: conn}, nil
+}
+
+type Publisher struct {
+	conn    connectionAPI
+	channel channelAPI
 }
 
 type MessagePublisher interface {
@@ -18,7 +69,7 @@ type MessagePublisher interface {
 }
 
 func NewPublisher(url string) (*Publisher, error) {
-	conn, err := amqp.Dial(url)
+	conn, err := dialAMQP(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
 	}

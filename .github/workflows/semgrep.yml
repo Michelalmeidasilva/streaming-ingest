@@ -37,7 +37,7 @@ jobs:
             . || true
 
       - name: Upload SARIF report to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         continue-on-error: true
         with:

@@ -1,7 +1,9 @@
 package rabbitmq
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -9,6 +11,52 @@ import (
 
 // Compile-time assertion that *Publisher satisfies MessagePublisher
 var _ MessagePublisher = (*Publisher)(nil)
+
+type mockConnection struct {
+	channelFunc func() (channelAPI, error)
+	closeFunc   func() error
+}
+
+func (m *mockConnection) Channel() (channelAPI, error) {
+	if m.channelFunc != nil {
+		return m.channelFunc()
+	}
+	return nil, nil
+}
+
+func (m *mockConnection) Close() error {
+	if m.closeFunc != nil {
+		return m.closeFunc()
+	}
+	return nil
+}
+
+type mockChannel struct {
+	exchangeDeclareFunc    func(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error
+	publishWithContextFunc func(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+	closeFunc              func() error
+}
+
+func (m *mockChannel) ExchangeDeclare(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+	if m.exchangeDeclareFunc != nil {
+		return m.exchangeDeclareFunc(name, kind, durable, autoDelete, internal, noWait, args)
+	}
+	return nil
+}
+
+func (m *mockChannel) PublishWithContext(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+	if m.publishWithContextFunc != nil {
+		return m.publishWithContextFunc(ctx, exchange, key, mandatory, immediate, msg)
+	}
+	return nil
+}
+
+func (m *mockChannel) Close() error {
+	if m.closeFunc != nil {
+		return m.closeFunc()
+	}
+	return nil
+}
 
 func TestPublisherClose(t *testing.T) {
 	tests := []struct {
@@ -70,6 +118,69 @@ func TestNewPublisherInvalidURL(t *testing.T) {
 	}
 }
 
+func TestNewPublisher(t *testing.T) {
+	originalDial := dialAMQP
+	t.Cleanup(func() { dialAMQP = originalDial })
+
+	t.Run("channel open fails", func(t *testing.T) {
+		dialAMQP = func(url string) (connectionAPI, error) {
+			return &mockConnection{
+				channelFunc: func() (channelAPI, error) {
+					return nil, errors.New("channel failed")
+				},
+			}, nil
+		}
+
+		pub, err := NewPublisher("amqp://test")
+		if err == nil || !contains(err.Error(), "failed to open a channel") {
+			t.Fatalf("NewPublisher() error = %v, want channel failure", err)
+		}
+		if pub != nil {
+			t.Fatalf("NewPublisher() = %v, want nil", pub)
+		}
+	})
+
+	t.Run("exchange declare fails", func(t *testing.T) {
+		dialAMQP = func(url string) (connectionAPI, error) {
+			return &mockConnection{
+				channelFunc: func() (channelAPI, error) {
+					return &mockChannel{
+						exchangeDeclareFunc: func(name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+							return errors.New("declare failed")
+						},
+					}, nil
+				},
+			}, nil
+		}
+
+		pub, err := NewPublisher("amqp://test")
+		if err == nil || !contains(err.Error(), "failed to declare an exchange") {
+			t.Fatalf("NewPublisher() error = %v, want exchange failure", err)
+		}
+		if pub != nil {
+			t.Fatalf("NewPublisher() = %v, want nil", pub)
+		}
+	})
+
+	t.Run("success", func(t *testing.T) {
+		dialAMQP = func(url string) (connectionAPI, error) {
+			return &mockConnection{
+				channelFunc: func() (channelAPI, error) {
+					return &mockChannel{}, nil
+				},
+			}, nil
+		}
+
+		pub, err := NewPublisher("amqp://test")
+		if err != nil {
+			t.Fatalf("NewPublisher() error = %v", err)
+		}
+		if pub == nil || pub.conn == nil || pub.channel == nil {
+			t.Fatalf("NewPublisher() returned uninitialized publisher: %+v", pub)
+		}
+	})
+}
+
 func TestPublishValidation(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -104,13 +215,13 @@ func TestPublishValidation(t *testing.T) {
 		{
 			name: "unmarshalable payload",
 			publisher: &Publisher{
-				conn:    nil,
-				channel: nil,
+				conn:    &mockConnection{},
+				channel: &mockChannel{},
 			},
 			routingKey:  "video.test",
 			payload:     make(chan int),
 			expectErr:   true,
-			errContains: "publisher not initialized",
+			errContains: "failed to marshal payload",
 		},
 	}
 
@@ -128,6 +239,48 @@ func TestPublishValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPublishSuccessAndFailure(t *testing.T) {
+	t.Run("publish fails", func(t *testing.T) {
+		pub := &Publisher{
+			conn: &mockConnection{},
+			channel: &mockChannel{
+				publishWithContextFunc: func(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+					return errors.New("publish failed")
+				},
+			},
+		}
+
+		err := pub.Publish("video.test", map[string]string{"hello": "world"})
+		if err == nil || !contains(err.Error(), "failed to publish message") {
+			t.Fatalf("Publish() error = %v, want publish failure", err)
+		}
+	})
+
+	t.Run("publish succeeds", func(t *testing.T) {
+		var published amqp.Publishing
+		pub := &Publisher{
+			conn: &mockConnection{},
+			channel: &mockChannel{
+				publishWithContextFunc: func(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+					published = msg
+					if exchange != "video_events" || key != "video.test" {
+						t.Fatalf("unexpected routing: exchange=%s key=%s", exchange, key)
+					}
+					return nil
+				},
+			},
+		}
+
+		err := pub.Publish("video.test", map[string]string{"hello": "world"})
+		if err != nil {
+			t.Fatalf("Publish() error = %v", err)
+		}
+		if published.ContentType != "application/json" || len(published.Body) == 0 {
+			t.Fatalf("Publish() produced invalid AMQP payload: %+v", published)
+		}
+	})
 }
 
 func TestPublishPayloadMarshaling(t *testing.T) {

@@ -3,37 +3,43 @@ package adapters
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
-	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-type S3Adapter struct{}
+type S3Adapter struct {
+	client minioClientIface
+}
 
 func NewS3Adapter() *S3Adapter {
-	return &S3Adapter{}
-}
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = "us-east-1"
+	}
 
-type S3Event struct {
-	Records []S3EventRecord `json:"Records"`
-}
+	accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
+	secretKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	if accessKey == "" || secretKey == "" {
+		return &S3Adapter{client: nil}
+	}
 
-type S3EventRecord struct {
-	EventName string    `json:"eventName"`
-	EventTime time.Time `json:"eventTime"`
-	S3        S3EventS3 `json:"s3"`
-}
+	client, err := minio.New(fmt.Sprintf("s3.%s.amazonaws.com", region), &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+		Region: region,
+		Secure: true,
+	})
+	if err != nil {
+		return &S3Adapter{client: nil}
+	}
 
-type S3EventS3 struct {
-	Object S3EventObject `json:"object"`
-}
-
-type S3EventObject struct {
-	Key  string `json:"key"`
-	Size int64  `json:"size"`
+	return &S3Adapter{client: client}
 }
 
 func (a *S3Adapter) ParseEvent(payload []byte) (*DomainEvent, error) {
-	var event S3Event
+	var event storageEvent
 	if err := json.Unmarshal(payload, &event); err != nil {
 		return nil, fmt.Errorf("failed to parse s3 block: %w", err)
 	}
@@ -50,31 +56,26 @@ func (a *S3Adapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 		return nil, fmt.Errorf("ignoring non-creation event: %s", record.EventName)
 	}
 
-	keyParts := strings.Split(record.S3.Object.Key, "/")
-	var videoID, filename string
-
-	if len(keyParts) >= 2 {
-		videoID = keyParts[len(keyParts)-2]
-		filename = keyParts[len(keyParts)-1]
-	} else {
-		filename = record.S3.Object.Key
+	videoID, filename := parseStorageKey(record.S3.Object.Key)
+	if videoID == filename {
+		// S3 keys without a folder component default videoID to "unknown"
 		videoID = "unknown"
 	}
 
-	return &DomainEvent{
-		EventType:  "upload.completed",
-		VideoID:    videoID,
-		Filename:   filename,
-		Size:       record.S3.Object.Size,
-		Provider:   "aws-s3",
-		OccurredAt: record.EventTime,
-	}, nil
+	return newStorageDomainEvent(videoID, filename, record.S3.Object.Size, "aws-s3", record.EventTime), nil
 }
 
 func (a *S3Adapter) ListVideos(bucket string) ([]DomainEvent, error) {
-	return make([]DomainEvent, 0), nil
+	if a.client == nil {
+		return nil, fmt.Errorf("s3 client not initialized")
+	}
+	return listStorageVideos(a.client, bucket, "aws-s3")
 }
 
 func (a *S3Adapter) GenerateURL(bucket, key string) (string, error) {
-	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", bucket, key), nil
+	if a.client == nil {
+		return "", fmt.Errorf("s3 client not initialized")
+	}
+	return generatePresignedURL(a.client, bucket, key)
 }
+

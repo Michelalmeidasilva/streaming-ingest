@@ -1,11 +1,47 @@
 package adapters
 
 import (
+	"context"
+	"errors"
+	"net/url"
 	"testing"
+	"time"
+
+	"github.com/minio/minio-go/v7"
 )
 
+func TestNewS3Adapter(t *testing.T) {
+	t.Run("without credentials", func(t *testing.T) {
+		t.Setenv("AWS_ACCESS_KEY_ID", "")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+		t.Setenv("AWS_REGION", "")
+
+		adapter := NewS3Adapter()
+		if adapter == nil {
+			t.Fatalf("NewS3Adapter() returned nil")
+		}
+		if adapter.client != nil {
+			t.Fatalf("NewS3Adapter() client = %v, want nil without credentials", adapter.client)
+		}
+	})
+
+	t.Run("with credentials", func(t *testing.T) {
+		t.Setenv("AWS_ACCESS_KEY_ID", "test-access")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
+		t.Setenv("AWS_REGION", "us-east-2")
+
+		adapter := NewS3Adapter()
+		if adapter == nil {
+			t.Fatalf("NewS3Adapter() returned nil")
+		}
+		if adapter.client == nil {
+			t.Fatalf("NewS3Adapter() client is nil with credentials present")
+		}
+	})
+}
+
 func TestS3AdapterParseEvent(t *testing.T) {
-	adapter := NewS3Adapter()
+	adapter := &S3Adapter{client: nil}
 
 	tests := []struct {
 		name      string
@@ -47,6 +83,13 @@ func TestS3AdapterParseEvent(t *testing.T) {
 			wantVidID: "unknown",
 			wantFile:  "video.mp4",
 		},
+		{
+			name:      "url encoded key",
+			payload:   []byte(`{"Records":[{"eventName":"ObjectCreated:Put","s3":{"object":{"key":"abc123/video%20name.mp4","size":2048}}}]}`),
+			wantErr:   false,
+			wantVidID: "abc123",
+			wantFile:  "video name.mp4",
+		},
 	}
 
 	for _, tt := range tests {
@@ -77,29 +120,94 @@ func TestS3AdapterParseEvent(t *testing.T) {
 }
 
 func TestS3AdapterListVideos(t *testing.T) {
-	adapter := NewS3Adapter()
+	t.Run("client nil", func(t *testing.T) {
+		adapter := &S3Adapter{client: nil}
+		_, err := adapter.ListVideos("test-bucket")
+		if err == nil || !contains(err.Error(), "s3 client not initialized") {
+			t.Fatalf("ListVideos() error = %v, want s3 client not initialized", err)
+		}
+	})
 
-	videos, err := adapter.ListVideos("test-bucket")
-	if err != nil {
-		t.Fatalf("ListVideos() unexpected error: %v", err)
-	}
-	if len(videos) != 0 {
-		t.Errorf("ListVideos() should return empty slice, got %v items", len(videos))
-	}
+	t.Run("list objects", func(t *testing.T) {
+		adapter := &S3Adapter{
+			client: &mockMinioClient{
+				listObjectsFunc: func(ctx context.Context, bucketName string, opts minio.ListObjectsOptions) <-chan minio.ObjectInfo {
+					ch := make(chan minio.ObjectInfo, 2)
+					ch <- minio.ObjectInfo{Key: "vid-1/movie.mp4", Size: 1024, LastModified: time.Now()}
+					ch <- minio.ObjectInfo{Key: "vid-2/movie%20two.mp4", Size: 2048, LastModified: time.Now()}
+					close(ch)
+					return ch
+				},
+				presignedGetObjFunc: func(ctx context.Context, bucketName, objectName string, expires time.Duration, reqParams url.Values) (*url.URL, error) {
+					return nil, nil
+				},
+			},
+		}
+
+		videos, err := adapter.ListVideos("test-bucket")
+		if err != nil {
+			t.Fatalf("ListVideos() unexpected error: %v", err)
+		}
+		if len(videos) != 2 {
+			t.Fatalf("ListVideos() returned %d videos, want 2", len(videos))
+		}
+		if videos[1].Filename != "movie two.mp4" {
+			t.Fatalf("ListVideos() decoded filename = %q, want %q", videos[1].Filename, "movie two.mp4")
+		}
+	})
 }
 
 func TestS3AdapterGenerateURL(t *testing.T) {
-	adapter := NewS3Adapter()
+	t.Run("client nil", func(t *testing.T) {
+		adapter := &S3Adapter{client: nil}
+		_, err := adapter.GenerateURL("my-bucket", "vid1/file.mp4")
+		if err == nil || !contains(err.Error(), "s3 client not initialized") {
+			t.Fatalf("GenerateURL() error = %v, want s3 client not initialized", err)
+		}
+	})
 
-	url, err := adapter.GenerateURL("my-bucket", "vid1/file.mp4")
-	if err != nil {
-		t.Fatalf("GenerateURL() unexpected error: %v", err)
+	t.Run("presigned url", func(t *testing.T) {
+		adapter := &S3Adapter{
+			client: &mockMinioClient{
+				listObjectsFunc: func(ctx context.Context, bucketName string, opts minio.ListObjectsOptions) <-chan minio.ObjectInfo {
+					ch := make(chan minio.ObjectInfo)
+					close(ch)
+					return ch
+				},
+				presignedGetObjFunc: func(ctx context.Context, bucketName, objectName string, expires time.Duration, reqParams url.Values) (*url.URL, error) {
+					return url.Parse("https://my-bucket.s3.us-east-2.amazonaws.com/vid1/file.mp4?X-Amz-Signature=abc")
+				},
+			},
+		}
+
+		signedURL, err := adapter.GenerateURL("my-bucket", "vid1/file.mp4")
+		if err != nil {
+			t.Fatalf("GenerateURL() unexpected error: %v", err)
+		}
+		if !contains(signedURL, "my-bucket") {
+			t.Fatalf("GenerateURL() = %v, want to contain bucket name", signedURL)
+		}
+	})
+}
+
+func TestS3AdapterListVideosPropagatesErrors(t *testing.T) {
+	adapter := &S3Adapter{
+		client: &mockMinioClient{
+			listObjectsFunc: func(ctx context.Context, bucketName string, opts minio.ListObjectsOptions) <-chan minio.ObjectInfo {
+				ch := make(chan minio.ObjectInfo, 1)
+				ch <- minio.ObjectInfo{Err: errors.New("list failed")}
+				close(ch)
+				return ch
+			},
+			presignedGetObjFunc: func(ctx context.Context, bucketName, objectName string, expires time.Duration, reqParams url.Values) (*url.URL, error) {
+				return nil, nil
+			},
+		},
 	}
-	if url == "" {
-		t.Errorf("GenerateURL() returned empty string")
-	}
-	if !contains(url, "my-bucket") {
-		t.Errorf("GenerateURL() = %v, want to contain bucket name", url)
+
+	_, err := adapter.ListVideos("test-bucket")
+	if err == nil || !contains(err.Error(), "list failed") {
+		t.Fatalf("ListVideos() error = %v, want list failed", err)
 	}
 }
 

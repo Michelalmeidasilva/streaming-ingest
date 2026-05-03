@@ -327,3 +327,15 @@ func TestNewMinioAdapter(t *testing.T) {
 		})
 	}
 }
+
+func TestNewMinioAdapterSuccess(t *testing.T) {
+	t.Setenv("MINIO_ROOT_USER", "admin")
+	t.Setenv("MINIO_ROOT_PASSWORD", "password123")
+	t.Setenv("MINIO_ENDPOINT", "localhost:9000")
+	t.Setenv("MINIO_USE_SSL", "false")
+
+	adapter := NewMinioAdapter()
+	if adapter.client == nil {
+		t.Errorf("NewMinioAdapter() should have initialized client")
+	}
+}

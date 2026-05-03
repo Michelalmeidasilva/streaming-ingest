@@ -146,6 +146,36 @@ func TestProcessEvent(t *testing.T) {
 			wantSaveLen: 1,
 			wantCreate:  1,
 		},
+		{
+			name: "upload_started_missing_videoId",
+			event: FrontEndEvent{
+				EventType: "upload.started",
+				Payload:   EventPayload{"filename": "video.mp4"},
+			},
+			wantErr:     true,
+			wantSaveLen: 1,
+			wantCreate:  0,
+		},
+		{
+			name: "upload_started_missing_filename",
+			event: FrontEndEvent{
+				EventType: "upload.started",
+				Payload:   EventPayload{"videoId": "vid-1"},
+			},
+			wantErr:     true,
+			wantSaveLen: 1,
+			wantCreate:  0,
+		},
+		{
+			name: "upload_started_create_fails",
+			event: FrontEndEvent{
+				EventType: "upload.started",
+				Payload:   EventPayload{"videoId": "vid-1", "filename": "video.mp4"},
+			},
+			wantErr:     true,
+			wantSaveLen: 1,
+			wantCreate:  1,
+		},
 	}
 
 	for _, tt := range tests {
@@ -157,6 +187,9 @@ func TestProcessEvent(t *testing.T) {
 				mockVideoRepo = &mockVideoRepository{}
 			}
 			svc := &Service{publisher: mock, repo: mockRepo, videoRepo: mockVideoRepo}
+			if tt.name == "upload_started_create_fails" {
+				mockVideoRepo.createErr = errors.New("db error")
+			}
 
 			err := svc.ProcessEvent(tt.event)
 
@@ -210,5 +243,30 @@ func (m *mockVideoRepository) ListAll(ctx context.Context) ([]videos.Video, erro
 }
 
 func (m *mockVideoRepository) Search(ctx context.Context, query string) ([]videos.Video, error) {
-	return nil, nil
+	return []videos.Video{}, nil
+}
+
+func TestFirstInt64(t *testing.T) {
+	payload := EventPayload{
+		"int":     1,
+		"int64":   int64(2),
+		"float64": float64(3.0),
+		"string":  "4",
+	}
+
+	if got := firstInt64(payload, "int"); got != 1 {
+		t.Errorf("firstInt64(int) = %v, want 1", got)
+	}
+	if got := firstInt64(payload, "int64"); got != 2 {
+		t.Errorf("firstInt64(int64) = %v, want 2", got)
+	}
+	if got := firstInt64(payload, "float64"); got != 3 {
+		t.Errorf("firstInt64(float64) = %v, want 3", got)
+	}
+	if got := firstInt64(payload, "string"); got != 0 {
+		t.Errorf("firstInt64(string) = %v, want 0", got)
+	}
+	if got := firstInt64(payload, "missing"); got != 0 {
+		t.Errorf("firstInt64(missing) = %v, want 0", got)
+	}
 }

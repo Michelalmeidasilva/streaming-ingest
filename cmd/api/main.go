@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -24,43 +25,25 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+type shutdowner interface {
+	Shutdown() error
+}
+
 func main() {
 	if err := loadDotEnv(".env"); err != nil {
 		log.Printf("WARNING: could not load .env: %v", err)
 	}
 
-	// Initialize Fiber
-	app := fiber.New(fiber.Config{
-		DisableStartupMessage: true,
+	app := newApp()
+
+	rabbitMQURL := requireEnv("RABBITMQ_URL")
+	mongoURI := requireEnv("MONGODB_URI")
+
+	mongoClient, err := retry(10, 2*time.Second, func() (*mongo.Client, error) {
+		return connectMongo(mongoURI)
+	}, func(attempt, max int, err error) {
+		log.Printf("Failed to connect to MongoDB, retrying in 2 seconds... (%d/%d): %v", attempt, max, err)
 	})
-
-	app.Use(logger.New())
-
-	// Read Configs
-	rabbitMQURL := os.Getenv("RABBITMQ_URL")
-	if rabbitMQURL == "" {
-		log.Fatal("RABBITMQ_URL is required")
-	}
-
-	mongoURI := os.Getenv("MONGODB_URI")
-	if mongoURI == "" {
-		log.Fatal("MONGODB_URI is required")
-	}
-
-	var mongoClient *mongo.Client
-	var err error
-	maxMongoRetries := 10
-	for i := 0; i < maxMongoRetries; i++ {
-		mongoClient, err = connectMongo(mongoURI)
-		if err == nil {
-			break
-		}
-		if isMongoAuthError(err) {
-			log.Fatalf("MongoDB authentication failed for %s. Check the username, password, authSource, and cluster access: %v", redactMongoURI(mongoURI), err)
-		}
-		log.Printf("Failed to connect to MongoDB, retrying in 2 seconds... (%d/%d): %v", i+1, maxMongoRetries, err)
-		time.Sleep(2 * time.Second)
-	}
 	if err != nil {
 		log.Fatalf("Could not connect to MongoDB at %s after retries. Start the infra stack with `cd ../infra && make up`: %v", redactMongoURI(mongoURI), err)
 	}
@@ -75,28 +58,18 @@ func main() {
 	videoRepo := videos.NewMongoRepository(mongoClient, "streaming", "videos")
 	eventRepo := events.NewMongoRepository(mongoClient, "streaming", "events")
 
-	// Retry loop for RabbitMQ connection (since it may start slower in compose)
-	var pub *rabbitmq.Publisher
-	maxRetries := 10
-	for i := 0; i < maxRetries; i++ {
-		pub, err = rabbitmq.NewPublisher(rabbitMQURL)
-		if err == nil {
-			break
-		}
-		log.Printf("Failed to connect to RabbitMQ, retrying in 2 seconds... (%d/%d): %v", i+1, maxRetries, err)
-		time.Sleep(2 * time.Second)
-	}
+	pub, err := retry(10, 2*time.Second, func() (*rabbitmq.Publisher, error) {
+		return rabbitmq.NewPublisher(rabbitMQURL)
+	}, func(attempt, max int, err error) {
+		log.Printf("Failed to connect to RabbitMQ, retrying in 2 seconds... (%d/%d): %v", attempt, max, err)
+	})
 	if err != nil {
 		log.Fatalf("Could not connect to RabbitMQ after retries: %v", err)
 	}
 	defer pub.Close()
 	log.Println("Connected to RabbitMQ successfully.")
 
-	// Instantiate Storage Adapters
-	storageAdapters := map[string]adapters.StorageAdapter{
-		"minio":  adapters.NewMinioAdapter(),
-		"aws-s3": adapters.NewS3Adapter(),
-	}
+	storageAdapters := createStorageAdapters()
 
 	// Instantiate Services & Handlers
 	eventsService := events.NewService(pub, eventRepo, videoRepo)
@@ -108,29 +81,89 @@ func main() {
 	videosService := videos.NewService(storageAdapters, videoRepo)
 	videosHandler := videos.NewHandler(videosService)
 
-	// Routing setup
+	registerRoutes(app, eventsHandler, webhookHandler, videosHandler)
+
+	installGracefulShutdown(app, nil)
+
+	log.Println("Event Gateway starting on port 8080...")
+	if err := app.Listen(":8080"); err != nil {
+		log.Fatalf("Server error: %v", err)
+	}
+}
+
+func newApp() *fiber.App {
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+	})
+	app.Use(logger.New())
+	return app
+}
+
+func requireEnv(key string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		log.Fatalf("%s is required", key)
+	}
+	return value
+}
+
+func registerRoutes(app *fiber.App, eventsHandler *events.Handler, webhookHandler *webhooks.Handler, videosHandler *videos.Handler) {
 	v1 := app.Group("/api/v1")
 	v1.Post("/events", eventsHandler.ReceiveEvent)
 	v1.Post("/webhooks/storage/:provider", webhookHandler.HandleProviderWebhook)
 	v1.Get("/videos", videosHandler.ListVideos)
 	v1.Get("/videos/database", videosHandler.ListDatabaseVideos)
 	v1.Get("/videos/search", videosHandler.SearchVideos)
+}
 
-	// Graceful Shutdown
-	go func() {
-		quit := make(chan os.Signal, 1)
+func createStorageAdapters() map[string]adapters.StorageAdapter {
+	return map[string]adapters.StorageAdapter{
+		"minio":  adapters.NewMinioAdapter(),
+		"aws-s3": adapters.NewS3Adapter(),
+	}
+}
+
+func installGracefulShutdown(app shutdowner, signals <-chan os.Signal) chan os.Signal {
+	quit := make(chan os.Signal, 1)
+	if signals == nil {
 		signal.Notify(quit, os.Interrupt)
-		<-quit
+		signals = quit
+	}
+
+	go func() {
+		<-signals
 		log.Println("Gracefully shutting down server...")
 		if err := app.Shutdown(); err != nil {
 			log.Fatalf("Server shutdown error: %v", err)
 		}
 	}()
 
-	log.Println("Event Gateway starting on port 8080...")
-	if err := app.Listen(":8080"); err != nil {
-		log.Fatalf("Server error: %v", err)
+	return quit
+}
+
+func retry[T any](attempts int, delay time.Duration, operation func() (T, error), onRetry func(attempt, max int, err error)) (T, error) {
+	var zero T
+	if attempts <= 0 {
+		return zero, errors.New("attempts must be greater than zero")
 	}
+
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		value, err := operation()
+		if err == nil {
+			return value, nil
+		}
+
+		lastErr = err
+		if attempt < attempts {
+			if onRetry != nil {
+				onRetry(attempt, attempts, err)
+			}
+			time.Sleep(delay)
+		}
+	}
+
+	return zero, lastErr
 }
 
 func connectMongo(uri string) (*mongo.Client, error) {

@@ -1,9 +1,17 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"streaming-ingest/internal/events"
+	"streaming-ingest/internal/videos"
+	"streaming-ingest/internal/webhooks"
 )
 
 func TestLoadDotEnvLoadsUnsetVariables(t *testing.T) {
@@ -39,6 +47,127 @@ func TestLoadDotEnvDoesNotOverrideExistingVariables(t *testing.T) {
 
 	if got := os.Getenv("TEST_KEEP"); got != "from-env" {
 		t.Fatalf("expected TEST_KEEP to remain from-env, got %q", got)
+	}
+}
+
+func TestLoadDotEnvMissingFileAndMalformedInput(t *testing.T) {
+	if err := loadDotEnv(filepath.Join(t.TempDir(), ".missing")); err != nil {
+		t.Fatalf("expected missing file to be ignored, got %v", err)
+	}
+
+	dir := t.TempDir()
+	invalid := filepath.Join(dir, ".env")
+	if err := os.WriteFile(invalid, []byte("NOT_VALID\n"), 0o600); err != nil {
+		t.Fatalf("failed to write invalid env file: %v", err)
+	}
+
+	if err := loadDotEnv(invalid); err == nil {
+		t.Fatalf("expected malformed env file to return error")
+	}
+}
+
+func TestConnectMongoInvalidURI(t *testing.T) {
+	client, err := connectMongo("mongodb://127.0.0.1:1")
+	if err == nil {
+		if client != nil {
+			_ = client.Disconnect(context.Background())
+		}
+		t.Fatalf("expected connection failure for invalid mongo endpoint")
+	}
+}
+
+func TestNewAppAndRegisterRoutes(t *testing.T) {
+	app := newApp()
+	registerRoutes(
+		app,
+		events.NewHandler(events.NewService(nil, nil, nil)),
+		webhooks.NewHandler(webhooks.NewService(nil, nil, videos.NewMemoryRepository())),
+		videos.NewHandler(videos.NewService(nil, videos.NewMemoryRepository())),
+	)
+
+	req := httptest.NewRequest("GET", "/api/v1/videos", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test() error = %v", err)
+	}
+	if resp.StatusCode == 404 {
+		t.Fatalf("route registration failed, got 404")
+	}
+}
+
+func TestCreateStorageAdapters(t *testing.T) {
+	t.Setenv("MINIO_ROOT_USER", "admin")
+	t.Setenv("MINIO_ROOT_PASSWORD", "password123")
+	t.Setenv("AWS_ACCESS_KEY_ID", "test")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret")
+	t.Setenv("AWS_REGION", "us-east-1")
+
+	adapters := createStorageAdapters()
+	if adapters["minio"] == nil || adapters["aws-s3"] == nil {
+		t.Fatalf("expected both minio and aws-s3 adapters, got %+v", adapters)
+	}
+}
+
+type mockShutdowner struct {
+	shutdownFunc func() error
+}
+
+func (m *mockShutdowner) Shutdown() error {
+	if m.shutdownFunc != nil {
+		return m.shutdownFunc()
+	}
+	return nil
+}
+
+func TestInstallGracefulShutdown(t *testing.T) {
+	signals := make(chan os.Signal, 1)
+	done := make(chan struct{})
+	app := &mockShutdowner{
+		shutdownFunc: func() error {
+			close(done)
+			return nil
+		},
+	}
+
+	installGracefulShutdown(app, signals)
+	signals <- os.Interrupt
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("shutdown was not triggered")
+	}
+}
+
+func TestRetry(t *testing.T) {
+	t.Run("eventual success", func(t *testing.T) {
+		attempts := 0
+		got, err := retry(3, 0, func() (string, error) {
+			attempts++
+			if attempts < 3 {
+				return "", errors.New("not yet")
+			}
+			return "ok", nil
+		}, nil)
+		if err != nil || got != "ok" {
+			t.Fatalf("retry() = (%q, %v), want (ok, nil)", got, err)
+		}
+	})
+
+	t.Run("invalid attempts", func(t *testing.T) {
+		_, err := retry[string](0, 0, func() (string, error) {
+			return "", nil
+		}, nil)
+		if err == nil {
+			t.Fatalf("expected error for invalid attempts")
+		}
+	})
+}
+
+func TestRequireEnv(t *testing.T) {
+	t.Setenv("REQUIRED_ENV_TEST", "value")
+	if got := requireEnv("REQUIRED_ENV_TEST"); got != "value" {
+		t.Fatalf("requireEnv() = %q, want value", got)
 	}
 }
 

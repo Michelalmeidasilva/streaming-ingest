@@ -31,7 +31,28 @@ type VideoRepository interface {
 type mongoCollection interface {
 	InsertOne(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error)
 	UpdateOne(ctx context.Context, filter, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error)
-	Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error)
+	Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (mongoCursor, error)
+}
+
+type mongoCursor interface {
+	All(ctx context.Context, results interface{}) error
+	Close(ctx context.Context) error
+}
+
+type realMongoCollection struct {
+	collection *mongo.Collection
+}
+
+func (c *realMongoCollection) InsertOne(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error) {
+	return c.collection.InsertOne(ctx, document, opts...)
+}
+
+func (c *realMongoCollection) UpdateOne(ctx context.Context, filter, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error) {
+	return c.collection.UpdateOne(ctx, filter, update, opts...)
+}
+
+func (c *realMongoCollection) Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (mongoCursor, error) {
+	return c.collection.Find(ctx, filter, opts...)
 }
 
 type MongoRepository struct {
@@ -40,7 +61,9 @@ type MongoRepository struct {
 
 func NewMongoRepository(client *mongo.Client, dbName, collectionName string) *MongoRepository {
 	return &MongoRepository{
-		collection: client.Database(dbName).Collection(collectionName),
+		collection: &realMongoCollection{
+			collection: client.Database(dbName).Collection(collectionName),
+		},
 	}
 }
 

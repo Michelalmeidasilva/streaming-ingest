@@ -17,7 +17,7 @@ import (
 type mockCollection struct {
 	insertOneFunc func(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error)
 	updateOneFunc func(ctx context.Context, filter, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error)
-	findFunc      func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error)
+	findFunc      func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (mongoCursor, error)
 	insertCalls   int
 	updateCalls   int
 }
@@ -38,11 +38,30 @@ func (m *mockCollection) UpdateOne(ctx context.Context, filter, update interface
 	return &mongo.UpdateResult{UpsertedCount: 1}, nil
 }
 
-func (m *mockCollection) Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error) {
+func (m *mockCollection) Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (mongoCursor, error) {
 	if m.findFunc != nil {
 		return m.findFunc(ctx, filter, opts...)
 	}
 	return nil, nil
+}
+
+type mockCursor struct {
+	allFunc   func(ctx context.Context, results interface{}) error
+	closeFunc func(ctx context.Context) error
+}
+
+func (m *mockCursor) All(ctx context.Context, results interface{}) error {
+	if m.allFunc != nil {
+		return m.allFunc(ctx, results)
+	}
+	return nil
+}
+
+func (m *mockCursor) Close(ctx context.Context) error {
+	if m.closeFunc != nil {
+		return m.closeFunc(ctx)
+	}
+	return nil
 }
 
 func TestNewMongoRepository(t *testing.T) {
@@ -213,7 +232,7 @@ func TestMongoRepositoryListAll(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockCollection{
-				findFunc: func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error) {
+				findFunc: func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (mongoCursor, error) {
 					return nil, tt.mockErr
 				},
 			}
@@ -231,6 +250,49 @@ func TestMongoRepositoryListAll(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMongoRepositoryListAllSuccessAndCursorError(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		mock := &mockCollection{
+			findFunc: func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (mongoCursor, error) {
+				return &mockCursor{
+					allFunc: func(ctx context.Context, results interface{}) error {
+						videos := results.(*[]Video)
+						*videos = append(*videos, Video{VideoID: "vid-1", Filename: "movie.mp4"})
+						return nil
+					},
+				}, nil
+			},
+		}
+
+		repo := &MongoRepository{collection: mock}
+		videos, err := repo.ListAll(context.Background())
+		if err != nil {
+			t.Fatalf("ListAll() error = %v", err)
+		}
+		if len(videos) != 1 || videos[0].Filename != "movie.mp4" {
+			t.Fatalf("ListAll() = %+v, want one mapped video", videos)
+		}
+	})
+
+	t.Run("cursor all fails", func(t *testing.T) {
+		mock := &mockCollection{
+			findFunc: func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (mongoCursor, error) {
+				return &mockCursor{
+					allFunc: func(ctx context.Context, results interface{}) error {
+						return errors.New("cursor failed")
+					},
+				}, nil
+			},
+		}
+
+		repo := &MongoRepository{collection: mock}
+		_, err := repo.ListAll(context.Background())
+		if err == nil || !contains(err.Error(), "cursor failed") {
+			t.Fatalf("ListAll() error = %v, want cursor failure", err)
+		}
+	})
 }
 
 func TestMongoRepositorySearch(t *testing.T) {
@@ -251,7 +313,7 @@ func TestMongoRepositorySearch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockCollection{
-				findFunc: func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error) {
+				findFunc: func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (mongoCursor, error) {
 					return nil, tt.mockErr
 				},
 			}
@@ -269,6 +331,49 @@ func TestMongoRepositorySearch(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMongoRepositorySearchSuccessAndCursorError(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		mock := &mockCollection{
+			findFunc: func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (mongoCursor, error) {
+				return &mockCursor{
+					allFunc: func(ctx context.Context, results interface{}) error {
+						videos := results.(*[]Video)
+						*videos = append(*videos, Video{VideoID: "vid-2", Filename: "search-result.mp4"})
+						return nil
+					},
+				}, nil
+			},
+		}
+
+		repo := &MongoRepository{collection: mock}
+		videos, err := repo.Search(context.Background(), "search")
+		if err != nil {
+			t.Fatalf("Search() error = %v", err)
+		}
+		if len(videos) != 1 || videos[0].Filename != "search-result.mp4" {
+			t.Fatalf("Search() = %+v, want one mapped video", videos)
+		}
+	})
+
+	t.Run("cursor all fails", func(t *testing.T) {
+		mock := &mockCollection{
+			findFunc: func(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (mongoCursor, error) {
+				return &mockCursor{
+					allFunc: func(ctx context.Context, results interface{}) error {
+						return errors.New("search cursor failed")
+					},
+				}, nil
+			},
+		}
+
+		repo := &MongoRepository{collection: mock}
+		_, err := repo.Search(context.Background(), "search")
+		if err == nil || !contains(err.Error(), "search cursor failed") {
+			t.Fatalf("Search() error = %v, want cursor failure", err)
+		}
+	})
 }
 
 func TestVideoRepository_Interface(t *testing.T) {
@@ -309,12 +414,22 @@ func TestMemoryRepository(t *testing.T) {
 		t.Fatalf("Save() update error = %v", err)
 	}
 
+	third := &Video{
+		VideoID:  "vid-3",
+		Filename: "outro.mp4",
+		Provider: "minio",
+		Status:   "uploaded",
+	}
+	if err := repo.Create(context.Background(), third); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
 	all, err := repo.ListAll(context.Background())
 	if err != nil {
 		t.Fatalf("ListAll() error = %v", err)
 	}
-	if len(all) != 2 {
-		t.Fatalf("ListAll() len = %d, want 2", len(all))
+	if len(all) != 3 {
+		t.Fatalf("ListAll() len = %d, want 3", len(all))
 	}
 
 	found, err := repo.Search(context.Background(), "intro")

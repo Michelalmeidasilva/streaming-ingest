@@ -431,3 +431,57 @@ func TestStorageBucketEnv(t *testing.T) {
 		t.Errorf("enrichVideos() with custom bucket should still work")
 	}
 }
+
+func TestMergeVideo(t *testing.T) {
+	now := time.Now()
+	mongoVideo := Video{
+		VideoID:  "vid-1",
+		Filename: "file.mp4",
+	}
+	storageVideo := Video{
+		VideoID:   "vid-1",
+		Filename:  "file.mp4",
+		Size:      1024,
+		Provider:  "minio",
+		Status:    "ready",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	merged := mergeVideo(mongoVideo, storageVideo)
+
+	if merged.Size != 1024 {
+		t.Errorf("merged.Size = %d, want 1024", merged.Size)
+	}
+	if merged.Provider != "minio" {
+		t.Errorf("merged.Provider = %s, want minio", merged.Provider)
+	}
+	if merged.Status != "ready" {
+		t.Errorf("merged.Status = %s, want ready", merged.Status)
+	}
+	if !merged.CreatedAt.Equal(now) {
+		t.Errorf("merged.CreatedAt = %v, want %v", merged.CreatedAt, now)
+	}
+	if !merged.UpdatedAt.Equal(now) {
+		t.Errorf("merged.UpdatedAt = %v, want %v", merged.UpdatedAt, now)
+	}
+
+	// Test that it doesn't overwrite if not empty
+	mongoVideoFull := Video{
+		VideoID:  "vid-1",
+		Filename: "file.mp4",
+		Size:     512,
+		Provider: "aws",
+		Status:   "processing",
+	}
+	merged2 := mergeVideo(mongoVideoFull, storageVideo)
+	if merged2.Size != 512 {
+		t.Errorf("merged2.Size = %d, want 512", merged2.Size)
+	}
+	if merged2.Provider != "aws" {
+		t.Errorf("merged2.Provider = %s, want aws", merged2.Provider)
+	}
+	if merged2.Status != "processing" {
+		t.Errorf("merged2.Status = %s, want processing", merged2.Status)
+	}
+}
