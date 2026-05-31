@@ -89,8 +89,12 @@ func main() {
 
 	installGracefulShutdown(app, nil)
 
-	log.Println("Event Gateway starting on port 8080...")
-	if err := app.Listen(":8080"); err != nil {
+	port := os.Getenv("SERVER_PORT")
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("Event Gateway starting on port %s...", port)
+	if err := app.Listen(":" + port); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 }

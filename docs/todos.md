@@ -1,3 +1,0 @@
-- Assinar a URL no front/back
-- Trocar o provider por AWS, GOOGLE, ou minIO ou outro
-- Adicionar a pipeline do transcoding

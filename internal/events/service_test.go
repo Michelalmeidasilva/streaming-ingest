@@ -220,6 +220,43 @@ func TestProcessEvent(t *testing.T) {
 	}
 }
 
+func TestProcessEventPublishesTranscodeLifecycleRoutingKeys(t *testing.T) {
+	events := map[string]string{
+		"transcode.queued":    "video.transcode.queued",
+		"transcode.started":   "video.transcode.started",
+		"transcode.progress":  "video.transcode.progress",
+		"packaging.completed": "video.packaging.completed",
+		"transcode.completed": "video.transcode.completed",
+		"transcode.failed":    "video.transcode.failed",
+		"ready":               "video.ready",
+	}
+
+	for eventType, wantKey := range events {
+		t.Run(eventType, func(t *testing.T) {
+			publisher := &mockPublisher{}
+			repo := &mockEventRepository{}
+			svc := NewService(publisher, repo, nil)
+
+			err := svc.ProcessEvent(FrontEndEvent{
+				EventType: eventType,
+				Payload: EventPayload{
+					"videoId": "video-1",
+					"jobId":   "job-1",
+				},
+			})
+			if err != nil {
+				t.Fatalf("ProcessEvent() error = %v", err)
+			}
+			if len(publisher.calledWith) != 1 || publisher.calledWith[0] != wantKey {
+				t.Fatalf("routing keys = %v, want %s", publisher.calledWith, wantKey)
+			}
+			if len(repo.saved) != 1 || repo.saved[0].RoutingKey != wantKey {
+				t.Fatalf("saved record = %+v, want routing key %s", repo.saved, wantKey)
+			}
+		})
+	}
+}
+
 func (m *mockEventRepository) Save(ctx context.Context, event *EventRecord) error {
 	if event != nil {
 		m.saved = append(m.saved, event)

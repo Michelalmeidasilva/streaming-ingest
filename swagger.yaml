@@ -120,6 +120,17 @@ components:
           type: string
           description: Tipo do evento que fará a composição da Routing Key no broker. (ex. upload.progress)
           example: "upload.progress"
+          enum:
+            - upload.started
+            - upload.progress
+            - upload.completed
+            - transcode.queued
+            - transcode.started
+            - transcode.progress
+            - packaging.completed
+            - transcode.completed
+            - transcode.failed
+            - ready
         payload:
           type: object
           description: Um objeto livre contendo chaves, meta-dados e tamanhos do processo em andamento.
@@ -140,6 +151,39 @@ components:
             totalBytes:
               type: integer
               example: 10000000
+            objectKey:
+              type: string
+              example: "ebd23f99-c89b-43d9-a72a-1928fb211e40/meu-video-teste.mp4"
+            bucket:
+              type: string
+              example: "videos"
+            provider:
+              type: string
+              example: "minio"
+            jobId:
+              type: string
+              example: "ebd23f99-c89b-43d9-a72a-1928fb211e40-1778364444158814000"
+            processingStatus:
+              type: string
+              example: "transcoding"
+            phase:
+              type: string
+              example: "rendition.completed"
+            hlsManifestPath:
+              type: string
+              example: "transcoded/ebd23f99-c89b-43d9-a72a-1928fb211e40/hls/master.m3u8"
+            dashManifestPath:
+              type: string
+              example: "transcoded/ebd23f99-c89b-43d9-a72a-1928fb211e40/dash/manifest.mpd"
+            metricsPath:
+              type: string
+              example: "metrics/ebd23f99-c89b-43d9-a72a-1928fb211e40/transcode-result.json"
+            fingerprint:
+              type: string
+              example: "5f1ef2f6d3d1a899..."
+            attempt:
+              type: integer
+              example: 1
 
     DomainEvent:
       type: object
@@ -159,6 +203,18 @@ components:
         provider:
           type: string
           example: "minio"
+        objectKey:
+          type: string
+          example: "ebd23f99-c89b-43d9-a72a-1928fb211e40/meu-video-teste.mp4"
+        bucket:
+          type: string
+          example: "videos"
+        sourceETag:
+          type: string
+          example: "9b2cf535f27731c974343645a3985328"
+        sourceVersion:
+          type: string
+          example: "3LgS4P..."
         occurredAt:
           type: string
           format: date-time

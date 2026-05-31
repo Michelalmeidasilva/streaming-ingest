@@ -47,6 +47,12 @@ type Video struct {
 	ThumbnailStatus string    `bson:"thumbnail_status,omitempty" json:"thumbnailStatus,omitempty"`
 	MimeType        string    `bson:"mime_type,omitempty" json:"mimeType,omitempty"`
 	Provider        string    `bson:"provider,omitempty" json:"provider,omitempty"`
+	ProcessingStatus string         `bson:"processingStatus,omitempty" json:"processingStatus,omitempty"`
+	Source           map[string]any `bson:"source,omitempty" json:"source,omitempty"`
+	MediaInfo        map[string]any `bson:"mediaInfo,omitempty" json:"mediaInfo,omitempty"`
+	Transcode        map[string]any `bson:"transcode,omitempty" json:"transcode,omitempty"`
+	Playback         map[string]any `bson:"playback,omitempty" json:"playback,omitempty"`
+	Metrics          map[string]any `bson:"metrics,omitempty" json:"metrics,omitempty"`
 }
 
 type UploadState struct {
