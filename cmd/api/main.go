@@ -21,6 +21,7 @@ import (
 	"streaming-ingest/internal/videos"
 	"streaming-ingest/internal/webhooks"
 
+	fiberprometheus "github.com/ansrivas/fiberprometheus/v2"
 	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -118,6 +119,9 @@ func newApp() *fiber.App {
 	})
 	app.Use(logger.New())
 	app.Use(otelfiber.Middleware())
+	prometheus := fiberprometheus.New("streaming-ingest")
+	prometheus.RegisterAt(app, "/metrics")
+	app.Use(prometheus.Middleware)
 	return app
 }
 
