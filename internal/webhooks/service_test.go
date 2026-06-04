@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"streaming-ingest/internal/adapters"
+	"streaming-ingest/internal/uploadstate"
 	"streaming-ingest/internal/videos"
 )
 
@@ -67,13 +68,79 @@ func (m *mockVideoRepository) FindByVideoID(ctx context.Context, videoID string)
 	return m.findResult, m.findErr
 }
 
+type mockUploadStatePatcher struct {
+	patchedID  string
+	patchedKey []string
+	patchErr   error
+}
+
+func (m *mockUploadStatePatcher) PatchVideo(ctx context.Context, videoID string, patch map[string]any) (*uploadstate.Video, error) {
+	m.patchedID = videoID
+	for k := range patch {
+		m.patchedKey = append(m.patchedKey, k)
+	}
+	return nil, m.patchErr
+}
+
+func TestProcessWebhook_PatchesStorageConfirmedAt(t *testing.T) {
+	pub := &mockPublisher{}
+	patcher := &mockUploadStatePatcher{}
+	adapter := &mockStorageAdapter{
+		parseEventResult: &adapters.DomainEvent{
+			VideoID:   "abc-123",
+			Filename:  "movie.mp4",
+			EventType: "upload.completed",
+			Provider:  "aws-s3",
+			Size:      2048,
+		},
+	}
+	svc := NewService(pub, map[string]adapters.StorageAdapter{"s3": adapter}, &mockVideoRepository{}, patcher)
+
+	if err := svc.ProcessWebhook("s3", []byte(`{}`)); err != nil {
+		t.Fatalf("ProcessWebhook returned error: %v", err)
+	}
+	if patcher.patchedID != "abc-123" {
+		t.Errorf("patched videoID = %q, want %q", patcher.patchedID, "abc-123")
+	}
+	found := false
+	for _, k := range patcher.patchedKey {
+		if k == "storage_confirmed_at" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected storage_confirmed_at in patch, got keys %v", patcher.patchedKey)
+	}
+	if len(pub.calledWith) != 1 {
+		t.Errorf("expected exactly 1 publish, got %d", len(pub.calledWith))
+	}
+}
+
+func TestProcessWebhook_TolueratesPatchNotFound(t *testing.T) {
+	pub := &mockPublisher{}
+	patcher := &mockUploadStatePatcher{patchErr: uploadstate.ErrNotFound}
+	adapter := &mockStorageAdapter{
+		parseEventResult: &adapters.DomainEvent{
+			VideoID: "missing", Filename: "x.mp4", EventType: "upload.completed", Provider: "minio",
+		},
+	}
+	svc := NewService(pub, map[string]adapters.StorageAdapter{"minio": adapter}, &mockVideoRepository{}, patcher)
+
+	if err := svc.ProcessWebhook("minio", []byte(`{}`)); err != nil {
+		t.Fatalf("ProcessWebhook should tolerate ErrNotFound, got %v", err)
+	}
+	if len(pub.calledWith) != 1 {
+		t.Errorf("expected publish to still happen, got %d publishes", len(pub.calledWith))
+	}
+}
+
 func TestNewService(t *testing.T) {
 	mock := &mockPublisher{}
 	mockAdapter := &mockStorageAdapter{}
 	mockRepo := &mockVideoRepository{}
 	adapters := map[string]adapters.StorageAdapter{"minio": mockAdapter}
 
-	svc := NewService(mock, adapters, mockRepo)
+	svc := NewService(mock, adapters, mockRepo, &mockUploadStatePatcher{})
 
 	if svc == nil {
 		t.Errorf("NewService() returned nil")

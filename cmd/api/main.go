@@ -96,13 +96,14 @@ func main() {
 	eventsService := events.NewService(pub, eventRepo, videoRepo)
 	eventsHandler := events.NewHandler(eventsService)
 
-	webhookService := webhooks.NewService(pub, storageAdapters, videoRepo)
+	uploadStateService := uploadstate.NewService(uploadStateRepo)
+	uploadStateHandler := uploadstate.NewHandler(uploadStateService)
+
+	webhookService := webhooks.NewService(pub, storageAdapters, videoRepo, uploadStateService)
 	webhookHandler := webhooks.NewHandler(webhookService)
 
 	videosService := videos.NewService(storageAdapters, videoRepo)
 	videosHandler := videos.NewHandler(videosService)
-	uploadStateService := uploadstate.NewService(uploadStateRepo)
-	uploadStateHandler := uploadstate.NewHandler(uploadStateService)
 
 	registerRoutes(app, eventsHandler, webhookHandler, videosHandler, uploadStateHandler)
 

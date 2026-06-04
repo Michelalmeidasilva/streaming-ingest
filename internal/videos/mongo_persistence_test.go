@@ -104,6 +104,7 @@ func TestMongoPersistsVideoOnWebhookUpload(t *testing.T) {
 		&integrationPublisher{},
 		map[string]adapters.StorageAdapter{"minio": mockAdapter},
 		repo,
+		nil,
 	)
 
 	if err := svc.ProcessWebhook("minio", []byte(`{"ignored":true}`)); err != nil {
