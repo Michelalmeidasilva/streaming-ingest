@@ -58,6 +58,10 @@ func (a *MinioAdapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 		return nil, fmt.Errorf("minio object key is required")
 	}
 
+	if isPipelineOutputKey(record.S3.Object.Key) {
+		return nil, ErrIgnoredObjectKey
+	}
+
 	videoID, filename := parseStorageKey(record.S3.Object.Key)
 
 	return newStorageDomainEvent(videoID, filename, record.S3.Object.Size, "minio", record.EventTime), nil

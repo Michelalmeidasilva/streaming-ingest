@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -9,6 +10,30 @@ import (
 
 	"github.com/minio/minio-go/v7"
 )
+
+// ErrIgnoredObjectKey signals a storage event for an object the gateway must
+// NOT ingest — namely the pipeline's own outputs (transcoded segments, metrics,
+// thumbnails). Treating it as a distinct sentinel lets the webhook handler skip
+// the event cleanly instead of failing, preventing re-ingestion loops.
+var ErrIgnoredObjectKey = errors.New("object key is a pipeline output; ignoring")
+
+// pipelineOutputPrefixes are object-key prefixes written by downstream stages
+// (transcode/packaging) that must never be re-ingested as new uploads.
+var pipelineOutputPrefixes = []string{"transcoded/", "metrics/", "thumbnails/"}
+
+// isPipelineOutputKey reports whether the key belongs to a pipeline output and
+// should be ignored by the ingest webhook.
+func isPipelineOutputKey(key string) bool {
+	if decoded, err := url.QueryUnescape(key); err == nil {
+		key = decoded
+	}
+	for _, prefix := range pipelineOutputPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
 
 type minioClientIface interface {
 	ListObjects(ctx context.Context, bucketName string, opts minio.ListObjectsOptions) <-chan minio.ObjectInfo

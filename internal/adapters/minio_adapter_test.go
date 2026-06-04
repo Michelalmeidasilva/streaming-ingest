@@ -121,6 +121,34 @@ func TestMinioAdapterParseEvent(t *testing.T) {
 	}
 }
 
+func TestMinioAdapterParseEvent_IgnoresPipelineOutputs(t *testing.T) {
+	adapter := &MinioAdapter{client: nil}
+	cases := []string{
+		`{"Records":[{"eventName":"s3:ObjectCreated:Put","s3":{"object":{"key":"transcoded/abc123/hls/master.m3u8","size":10}}}]}`,
+		`{"Records":[{"eventName":"s3:ObjectCreated:Put","s3":{"object":{"key":"transcoded/abc123/hls/720p/init.mp4","size":10}}}]}`,
+		`{"Records":[{"eventName":"s3:ObjectCreated:Put","s3":{"object":{"key":"metrics/abc123/transcode-result.json","size":10}}}]}`,
+		`{"Records":[{"eventName":"s3:ObjectCreated:Put","s3":{"object":{"key":"thumbnails/abc123.jpg","size":10}}}]}`,
+	}
+	for _, payload := range cases {
+		_, err := adapter.ParseEvent([]byte(payload))
+		if !errors.Is(err, ErrIgnoredObjectKey) {
+			t.Errorf("ParseEvent(%s): expected ErrIgnoredObjectKey, got %v", payload, err)
+		}
+	}
+}
+
+func TestMinioAdapterParseEvent_AcceptsUploadKey(t *testing.T) {
+	adapter := &MinioAdapter{client: nil}
+	payload := `{"Records":[{"eventName":"s3:ObjectCreated:CompleteMultipartUpload","s3":{"object":{"key":"550e8400-e29b-41d4-a716-446655440000/beauty-medium-001.mp4","size":24074810}}}]}`
+	event, err := adapter.ParseEvent([]byte(payload))
+	if err != nil {
+		t.Fatalf("ParseEvent: unexpected error %v", err)
+	}
+	if event.VideoID != "550e8400-e29b-41d4-a716-446655440000" || event.Filename != "beauty-medium-001.mp4" {
+		t.Errorf("ParseEvent: got videoID=%q filename=%q", event.VideoID, event.Filename)
+	}
+}
+
 func TestMinioAdapterListVideos(t *testing.T) {
 	tests := []struct {
 		name     string

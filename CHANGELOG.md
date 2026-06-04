@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] 2026-06-04
+### Fixed
+- Eliminated duplicate video documents (two per `video_id`). The videos service
+  (events `upload.started` → `videoRepo.Create` / `InsertOne`, storage webhooks,
+  catalog handler) shared the `videos` collection with the upload-state store
+  (which upserts the canonical lifecycle document by `video_id`). The unconditional
+  `InsertOne` produced a second, minimal `status:"uploading"` document per video.
+
+### Changed
+- The videos service now uses its own `videos_catalog` collection
+  (`cmd/api/main.go`). The upload-state store keeps the canonical per-video
+  lifecycle document (thumbnail/transcode/playback) in `videos`. `videos_catalog`
+  self-populates from storage webhooks and the storage-sync backfill
+  (`collectStorageVideos`). Existing duplicate `videos` documents were removed in a
+  one-time cleanup.
+
 ## [Unreleased] 2026-06-03
 ### Added
 - Endpoint `GET /metrics` expondo métricas Prometheus RED
