@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"streaming-ingest/internal/adapters"
 	"streaming-ingest/internal/rabbitmq"
 	"streaming-ingest/internal/videos"
 )
@@ -86,9 +87,80 @@ func pendingVideoFromEvent(event FrontEndEvent) (*videos.Video, error) {
 		Size:      size,
 		Provider:  firstString(event.Payload, "provider"),
 		Status:    "uploading",
+		RawVideo:  rawVideoFromPayload(event.Payload),
+		Subtitles: subtitlesFromPayload(event.Payload),
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil
+}
+
+// subtitlesFromPayload extracts sidecar subtitle references from an upload
+// event. Each entry needs an objectKey; entries without one are skipped.
+func subtitlesFromPayload(payload EventPayload) []adapters.SubtitleRef {
+	raw, ok := payload["subtitles"].([]interface{})
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	refs := make([]adapters.SubtitleRef, 0, len(raw))
+	for _, item := range raw {
+		entry, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		nested := EventPayload(entry)
+		objectKey := firstString(nested, "objectKey", "object_key", "key")
+		if objectKey == "" {
+			continue
+		}
+		refs = append(refs, adapters.SubtitleRef{
+			ObjectKey: objectKey,
+			Language:  firstString(nested, "language", "lang"),
+			Label:     firstString(nested, "label"),
+		})
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+	return refs
+}
+
+// rawVideoFromPayload extracts headerless raw geometry (.yuv) from an upload
+// event, if present. Returns nil when no usable width/height/fps are supplied,
+// so containers and self-describing formats persist nothing.
+func rawVideoFromPayload(payload EventPayload) *adapters.RawVideoParams {
+	raw, ok := payload["rawVideo"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	nested := EventPayload(raw)
+	width := int(firstInt64(nested, "width"))
+	height := int(firstInt64(nested, "height"))
+	fps := firstFloat64(nested, "fps")
+	if width <= 0 || height <= 0 || fps <= 0 {
+		return nil
+	}
+	return &adapters.RawVideoParams{
+		Width:       width,
+		Height:      height,
+		FPS:         fps,
+		PixelFormat: firstString(nested, "pixelFormat", "pixel_format"),
+	}
+}
+
+func firstFloat64(payload EventPayload, keys ...string) float64 {
+	for _, key := range keys {
+		if raw, ok := payload[key]; ok {
+			switch value := raw.(type) {
+			case float64:
+				return value
+			case int64:
+				return float64(value)
+			case int:
+				return float64(value)
+			}
+		}
+	}
+	return 0
 }
 
 func firstString(payload EventPayload, keys ...string) string {

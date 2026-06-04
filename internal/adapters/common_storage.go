@@ -17,9 +17,11 @@ import (
 // the event cleanly instead of failing, preventing re-ingestion loops.
 var ErrIgnoredObjectKey = errors.New("object key is a pipeline output; ignoring")
 
-// pipelineOutputPrefixes are object-key prefixes written by downstream stages
-// (transcode/packaging) that must never be re-ingested as new uploads.
-var pipelineOutputPrefixes = []string{"transcoded/", "metrics/", "thumbnails/"}
+// pipelineOutputPrefixes are object-key prefixes that must never be re-ingested
+// as new video uploads: downstream stage outputs (transcode/packaging) and
+// sidecar subtitle sources, which are attached to their video via the
+// upload.started event rather than triggering a transcode of their own.
+var pipelineOutputPrefixes = []string{"transcoded/", "metrics/", "thumbnails/", "subtitles/"}
 
 // isPipelineOutputKey reports whether the key belongs to a pipeline output and
 // should be ignored by the ingest webhook.

@@ -54,6 +54,10 @@ func (m *mockVideoRepository) Search(ctx context.Context, query string) ([]Video
 	return m.searchResult, m.searchErr
 }
 
+func (m *mockVideoRepository) FindByVideoID(ctx context.Context, videoID string) (*Video, error) {
+	return nil, nil
+}
+
 func TestNewService(t *testing.T) {
 	mockAdapter := &mockStorageAdapter{}
 	mockRepo := &mockVideoRepository{}

@@ -10,6 +10,31 @@ type DomainEvent struct {
 	Size       int64     `json:"size"`
 	Provider   string    `json:"provider"`
 	OccurredAt time.Time `json:"occurredAt"`
+	// RawVideo carries the geometry of headerless raw sources (.yuv) supplied at
+	// upload time. Storage webhooks cannot infer it, so the gateway looks it up
+	// from the persisted video record and forwards it to the transcoder. nil for
+	// containers and self-describing formats.
+	RawVideo *RawVideoParams `json:"rawVideo,omitempty"`
+	// Subtitles are sidecar .srt tracks uploaded with the video, looked up from
+	// the persisted record and forwarded so the transcoder can package WebVTT.
+	Subtitles []SubtitleRef `json:"subtitles,omitempty"`
+}
+
+// SubtitleRef points at a sidecar subtitle source (.srt) in storage and its
+// language/label, as supplied at upload time.
+type SubtitleRef struct {
+	ObjectKey string `json:"objectKey" bson:"object_key"`
+	Language  string `json:"language,omitempty" bson:"language,omitempty"`
+	Label     string `json:"label,omitempty" bson:"label,omitempty"`
+}
+
+// RawVideoParams describes a headerless raw video stream. ffprobe cannot read
+// these from the file, so the transcoder needs them as ffmpeg demuxer options.
+type RawVideoParams struct {
+	Width       int     `json:"width" bson:"width"`
+	Height      int     `json:"height" bson:"height"`
+	FPS         float64 `json:"fps" bson:"fps"`
+	PixelFormat string  `json:"pixelFormat,omitempty" bson:"pixel_format,omitempty"`
 }
 
 // StorageAdapter parses provider-specific webhooks into domain events

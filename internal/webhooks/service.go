@@ -42,6 +42,18 @@ func (s *Service) ProcessWebhook(provider string, payload []byte) error {
 		return fmt.Errorf("failed to parse event for provider %s: %w", provider, err)
 	}
 
+	// Raw uploads (.yuv) cannot be inspected from the storage webhook, so the
+	// geometry persisted at upload.started is carried forward to the transcoder
+	// and preserved on the record (Save below would otherwise overwrite it).
+	if existing, lookupErr := s.repo.FindByVideoID(context.Background(), domainEvent.VideoID); lookupErr == nil && existing != nil {
+		if existing.RawVideo != nil {
+			domainEvent.RawVideo = existing.RawVideo
+		}
+		if len(existing.Subtitles) > 0 {
+			domainEvent.Subtitles = existing.Subtitles
+		}
+	}
+
 	// Save metadata to MongoDB
 	video := &videos.Video{
 		VideoID:   domainEvent.VideoID,
@@ -49,6 +61,8 @@ func (s *Service) ProcessWebhook(provider string, payload []byte) error {
 		Size:      domainEvent.Size,
 		Provider:  domainEvent.Provider,
 		Status:    "uploaded",
+		RawVideo:  domainEvent.RawVideo,
+		Subtitles: domainEvent.Subtitles,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}

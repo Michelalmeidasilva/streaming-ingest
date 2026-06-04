@@ -1,6 +1,24 @@
 # Changelog
 
 ## [Unreleased] 2026-06-04
+### Added
+- Raw video geometry (`rawVideo`: width/height/fps/pixelFormat) is now carried
+  end-to-end for headerless `.yuv` uploads. The events service persists it from
+  the `upload.started` payload onto the video record (`raw_video`), and the
+  storage webhook handler looks it up by `videoId` and attaches it to the
+  published `video.upload.completed` `DomainEvent` so the transcoder can demux
+  the raw stream. The lookup also re-applies it on `Save` so the record is not
+  clobbered to a geometry-less state.
+- `adapters.RawVideoParams`, `DomainEvent.RawVideo`, `Video.RawVideo` and
+  `VideoRepository.FindByVideoID(ctx, videoID)`.
+- Sidecar subtitle references (`subtitles`: objectKey/language/label) propagate
+  the same way: persisted from `upload.started` (`Video.Subtitles`) and attached
+  to `video.upload.completed` by the webhook handler. `adapters.SubtitleRef`,
+  `DomainEvent.Subtitles`, `Video.Subtitles`. Storage webhooks for the
+  `subtitles/` prefix are ignored so a `.srt` upload does not trigger its own
+  transcode.
+
+## [Unreleased] 2026-06-04
 ### Fixed
 - Eliminated duplicate video documents (two per `video_id`). The videos service
   (events `upload.started` → `videoRepo.Create` / `InsertOne`, storage webhooks,

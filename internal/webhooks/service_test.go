@@ -13,10 +13,12 @@ import (
 type mockPublisher struct {
 	publishErr error
 	calledWith []string
+	payloads   []interface{}
 }
 
 func (m *mockPublisher) Publish(routingKey string, payload interface{}) error {
 	m.calledWith = append(m.calledWith, routingKey)
+	m.payloads = append(m.payloads, payload)
 	return m.publishErr
 }
 
@@ -38,7 +40,10 @@ func (m *mockStorageAdapter) GenerateURL(bucket, key string) (string, error) {
 }
 
 type mockVideoRepository struct {
-	saveErr error
+	saveErr     error
+	findResult  *videos.Video
+	findErr     error
+	savedVideos []*videos.Video
 }
 
 func (m *mockVideoRepository) Create(ctx context.Context, video *videos.Video) error {
@@ -46,6 +51,7 @@ func (m *mockVideoRepository) Create(ctx context.Context, video *videos.Video) e
 }
 
 func (m *mockVideoRepository) Save(ctx context.Context, video *videos.Video) error {
+	m.savedVideos = append(m.savedVideos, video)
 	return m.saveErr
 }
 
@@ -55,6 +61,10 @@ func (m *mockVideoRepository) ListAll(ctx context.Context) ([]videos.Video, erro
 
 func (m *mockVideoRepository) Search(ctx context.Context, query string) ([]videos.Video, error) {
 	return nil, nil
+}
+
+func (m *mockVideoRepository) FindByVideoID(ctx context.Context, videoID string) (*videos.Video, error) {
+	return m.findResult, m.findErr
 }
 
 func TestNewService(t *testing.T) {
@@ -234,5 +244,38 @@ func TestProcessWebhook(t *testing.T) {
 				t.Errorf("ProcessWebhook() error = %v, want to contain %v", err.Error(), tt.errMsg)
 			}
 		})
+	}
+}
+
+func TestProcessWebhookForwardsPersistedRawVideo(t *testing.T) {
+	pub := &mockPublisher{}
+	raw := &adapters.RawVideoParams{Width: 1920, Height: 1080, FPS: 30, PixelFormat: "yuv420p"}
+	repo := &mockVideoRepository{findResult: &videos.Video{VideoID: "v1", RawVideo: raw}}
+	svc := &Service{
+		publisher: pub,
+		adapters: map[string]adapters.StorageAdapter{
+			"minio": &mockStorageAdapter{parseEventResult: &adapters.DomainEvent{
+				EventType: "upload.completed", VideoID: "v1", Filename: "source.yuv",
+			}},
+		},
+		repo: repo,
+	}
+
+	if err := svc.ProcessWebhook("minio", []byte(`{}`)); err != nil {
+		t.Fatalf("ProcessWebhook() error = %v", err)
+	}
+
+	// The published event must carry the geometry the transcoder needs.
+	if len(pub.payloads) != 1 {
+		t.Fatalf("published %d events, want 1", len(pub.payloads))
+	}
+	event, ok := pub.payloads[0].(*adapters.DomainEvent)
+	if !ok || event.RawVideo == nil || event.RawVideo.Width != 1920 || event.RawVideo.FPS != 30 {
+		t.Fatalf("published rawVideo = %+v", pub.payloads[0])
+	}
+
+	// And the saved record must preserve it (Save would otherwise overwrite).
+	if len(repo.savedVideos) != 1 || repo.savedVideos[0].RawVideo == nil {
+		t.Fatalf("saved rawVideo not preserved: %+v", repo.savedVideos)
 	}
 }

@@ -36,6 +36,19 @@ func (r *MemoryRepository) Save(ctx context.Context, video *Video) error {
 	return nil
 }
 
+func (r *MemoryRepository) FindByVideoID(ctx context.Context, videoID string) (*Video, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for i := range r.videos {
+		if r.videos[i].VideoID == videoID {
+			found := r.videos[i]
+			return &found, nil
+		}
+	}
+	return nil, nil
+}
+
 func (r *MemoryRepository) ListAll(ctx context.Context) ([]Video, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

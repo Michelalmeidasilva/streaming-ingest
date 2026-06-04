@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"streaming-ingest/internal/adapters"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -17,8 +19,14 @@ type Video struct {
 	Size      int64     `bson:"size" json:"size"`
 	Provider  string    `bson:"provider" json:"provider"`
 	Status    string    `bson:"status" json:"status"`
-	CreatedAt time.Time `bson:"created_at" json:"createdAt"`
-	UpdatedAt time.Time `bson:"updated_at" json:"updatedAt"`
+	// RawVideo holds the geometry of headerless raw uploads (.yuv). Persisted at
+	// upload.started so the storage webhook can forward it to the transcoder.
+	RawVideo *adapters.RawVideoParams `bson:"raw_video,omitempty" json:"rawVideo,omitempty"`
+	// Subtitles are sidecar .srt tracks uploaded with the video, persisted at
+	// upload.started and forwarded to the transcoder on the webhook.
+	Subtitles []adapters.SubtitleRef `bson:"subtitles,omitempty" json:"subtitles,omitempty"`
+	CreatedAt time.Time              `bson:"created_at" json:"createdAt"`
+	UpdatedAt time.Time              `bson:"updated_at" json:"updatedAt"`
 }
 
 type VideoRepository interface {
@@ -26,6 +34,8 @@ type VideoRepository interface {
 	Save(ctx context.Context, video *Video) error
 	ListAll(ctx context.Context) ([]Video, error)
 	Search(ctx context.Context, query string) ([]Video, error)
+	// FindByVideoID returns the persisted video or nil if none exists.
+	FindByVideoID(ctx context.Context, videoID string) (*Video, error)
 }
 
 type mongoCollection interface {
@@ -102,6 +112,23 @@ func (r *MongoRepository) ListAll(ctx context.Context) ([]Video, error) {
 	}
 
 	return videos, nil
+}
+
+func (r *MongoRepository) FindByVideoID(ctx context.Context, videoID string) (*Video, error) {
+	cursor, err := r.collection.Find(ctx, bson.M{"video_id": videoID}, options.Find().SetLimit(1))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var videos []Video
+	if err := cursor.All(ctx, &videos); err != nil {
+		return nil, err
+	}
+	if len(videos) == 0 {
+		return nil, nil
+	}
+	return &videos[0], nil
 }
 
 func (r *MongoRepository) Search(ctx context.Context, query string) ([]Video, error) {

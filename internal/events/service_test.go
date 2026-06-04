@@ -283,6 +283,10 @@ func (m *mockVideoRepository) Search(ctx context.Context, query string) ([]video
 	return []videos.Video{}, nil
 }
 
+func (m *mockVideoRepository) FindByVideoID(ctx context.Context, videoID string) (*videos.Video, error) {
+	return nil, nil
+}
+
 func TestFirstInt64(t *testing.T) {
 	payload := EventPayload{
 		"int":     1,
