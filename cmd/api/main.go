@@ -70,7 +70,12 @@ func main() {
 		}
 	}()
 	log.Println("Connected to MongoDB successfully.")
-	videoRepo := videos.NewMongoRepository(mongoClient, "streaming", "videos")
+	// The videos service (events `upload.started`, storage webhooks, catalog
+	// handler) owns its own collection. The upload-state store keeps the canonical
+	// per-video lifecycle document (thumbnail/transcode/playback) in `videos`.
+	// Sharing one collection produced duplicate documents per video_id: events did
+	// an unconditional InsertOne alongside the upload-state upsert.
+	videoRepo := videos.NewMongoRepository(mongoClient, "streaming", "videos_catalog")
 	eventRepo := events.NewMongoRepository(mongoClient, "streaming", "events")
 	uploadStateRepo := uploadstate.NewMongoRepository(mongoClient, "streaming", "upload_sessions", "videos")
 

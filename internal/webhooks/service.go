@@ -2,7 +2,9 @@ package webhooks
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"streaming-ingest/internal/adapters"
 	"streaming-ingest/internal/rabbitmq"
 	"streaming-ingest/internal/videos"
@@ -31,6 +33,12 @@ func (s *Service) ProcessWebhook(provider string, payload []byte) error {
 
 	domainEvent, err := adapter.ParseEvent(payload)
 	if err != nil {
+		if errors.Is(err, adapters.ErrIgnoredObjectKey) {
+			// Pipeline output (transcoded segments, metrics, thumbnails) — not a
+			// new upload. Skip silently to avoid re-ingestion loops.
+			log.Printf("webhook: ignoring pipeline-output object for provider %s", provider)
+			return nil
+		}
 		return fmt.Errorf("failed to parse event for provider %s: %w", provider, err)
 	}
 

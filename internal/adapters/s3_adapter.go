@@ -56,6 +56,10 @@ func (a *S3Adapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 		return nil, fmt.Errorf("ignoring non-creation event: %s", record.EventName)
 	}
 
+	if isPipelineOutputKey(record.S3.Object.Key) {
+		return nil, ErrIgnoredObjectKey
+	}
+
 	videoID, filename := parseStorageKey(record.S3.Object.Key)
 	if videoID == filename {
 		// S3 keys without a folder component default videoID to "unknown"
