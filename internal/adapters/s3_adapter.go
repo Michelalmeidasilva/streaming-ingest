@@ -40,33 +40,43 @@ func NewS3Adapter() *S3Adapter {
 
 func (a *S3Adapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 	var event storageEvent
-	if err := json.Unmarshal(payload, &event); err != nil {
+	if err := json.Unmarshal(payload, &event); err == nil && len(event.Records) > 0 {
+		record := event.Records[0]
+		if record.S3.Object.Key == "" {
+			return nil, fmt.Errorf("s3 object key is required")
+		}
+		if !strings.HasPrefix(record.EventName, "ObjectCreated") {
+			return nil, fmt.Errorf("ignoring non-creation event: %s", record.EventName)
+		}
+		if isPipelineOutputKey(record.S3.Object.Key) {
+			return nil, ErrIgnoredObjectKey
+		}
+		videoID, filename := parseStorageKey(record.S3.Object.Key)
+		if videoID == filename {
+			videoID = "unknown"
+		}
+		return newStorageDomainEvent(videoID, filename, record.S3.Object.Size, "aws-s3", record.EventTime), nil
+	}
+
+	// Fall back to the EventBridge "Object Created" envelope (S3 → EventBridge → ingest).
+	var eb eventBridgeEvent
+	if err := json.Unmarshal(payload, &eb); err != nil {
 		return nil, fmt.Errorf("failed to parse s3 block: %w", err)
 	}
-
-	if len(event.Records) == 0 {
+	if eb.DetailType != "Object Created" {
 		return nil, fmt.Errorf("no records found in s3 event")
 	}
-
-	record := event.Records[0]
-	if record.S3.Object.Key == "" {
+	if eb.Detail.Object.Key == "" {
 		return nil, fmt.Errorf("s3 object key is required")
 	}
-	if !strings.HasPrefix(record.EventName, "ObjectCreated") {
-		return nil, fmt.Errorf("ignoring non-creation event: %s", record.EventName)
-	}
-
-	if isPipelineOutputKey(record.S3.Object.Key) {
+	if isPipelineOutputKey(eb.Detail.Object.Key) {
 		return nil, ErrIgnoredObjectKey
 	}
-
-	videoID, filename := parseStorageKey(record.S3.Object.Key)
+	videoID, filename := parseStorageKey(eb.Detail.Object.Key)
 	if videoID == filename {
-		// S3 keys without a folder component default videoID to "unknown"
 		videoID = "unknown"
 	}
-
-	return newStorageDomainEvent(videoID, filename, record.S3.Object.Size, "aws-s3", record.EventTime), nil
+	return newStorageDomainEvent(videoID, filename, eb.Detail.Object.Size, "aws-s3", eb.Time), nil
 }
 
 func (a *S3Adapter) ListVideos(bucket string) ([]DomainEvent, error) {
