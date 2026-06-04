@@ -116,7 +116,7 @@ func TestProcessWebhook_PatchesStorageConfirmedAt(t *testing.T) {
 	}
 }
 
-func TestProcessWebhook_TolueratesPatchNotFound(t *testing.T) {
+func TestProcessWebhook_ToleratesPatchNotFound(t *testing.T) {
 	pub := &mockPublisher{}
 	patcher := &mockUploadStatePatcher{patchErr: uploadstate.ErrNotFound}
 	adapter := &mockStorageAdapter{
