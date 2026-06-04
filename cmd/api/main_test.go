@@ -87,7 +87,7 @@ func TestNewAppAndRegisterRoutes(t *testing.T) {
 	registerRoutes(
 		app,
 		events.NewHandler(events.NewService(nil, nil, nil)),
-		webhooks.NewHandler(webhooks.NewService(nil, nil, videos.NewMemoryRepository())),
+		webhooks.NewHandler(webhooks.NewService(nil, nil, videos.NewMemoryRepository(), nil)),
 		videos.NewHandler(videos.NewService(nil, videos.NewMemoryRepository())),
 		uploadstate.NewHandler(uploadstate.NewService(nil)),
 	)

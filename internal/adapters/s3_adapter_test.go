@@ -211,6 +211,36 @@ func TestS3AdapterListVideosPropagatesErrors(t *testing.T) {
 	}
 }
 
+func TestS3AdapterParseEvent_EventBridgeEnvelope(t *testing.T) {
+	adapter := NewS3Adapter()
+	payload := []byte(`{
+		"detail-type": "Object Created",
+		"source": "aws.s3",
+		"time": "2026-06-04T12:00:00Z",
+		"detail": {
+			"bucket": { "name": "videos" },
+			"object": { "key": "raw/abc-123/movie.mp4", "size": 2048 }
+		}
+	}`)
+
+	event, err := adapter.ParseEvent(payload)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if event.VideoID != "abc-123" {
+		t.Errorf("VideoID = %q, want %q", event.VideoID, "abc-123")
+	}
+	if event.Filename != "movie.mp4" {
+		t.Errorf("Filename = %q, want %q", event.Filename, "movie.mp4")
+	}
+	if event.Size != 2048 {
+		t.Errorf("Size = %d, want 2048", event.Size)
+	}
+	if event.EventType != "upload.completed" {
+		t.Errorf("EventType = %q, want %q", event.EventType, "upload.completed")
+	}
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {

@@ -48,6 +48,7 @@ type Video struct {
 	MimeType        string    `bson:"mime_type,omitempty" json:"mimeType,omitempty"`
 	Provider        string    `bson:"provider,omitempty" json:"provider,omitempty"`
 	ProcessingStatus string         `bson:"processingStatus,omitempty" json:"processingStatus,omitempty"`
+	StorageConfirmedAt *time.Time    `bson:"storage_confirmed_at,omitempty" json:"storageConfirmedAt,omitempty"`
 	Source           map[string]any `bson:"source,omitempty" json:"source,omitempty"`
 	MediaInfo        map[string]any `bson:"mediaInfo,omitempty" json:"mediaInfo,omitempty"`
 	Transcode        map[string]any `bson:"transcode,omitempty" json:"transcode,omitempty"`

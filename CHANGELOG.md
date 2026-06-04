@@ -2,6 +2,15 @@
 
 ## [Unreleased] 2026-06-04
 ### Added
+- Webhook writes `storage_confirmed_at` to the upload-state video on `ObjectCreated`,
+  providing the "available for preview" signal (upload stage 3) to the platform.
+  Provider-agnostic (minio + s3); patched before publishing; `ErrNotFound` tolerated.
+- `s3` adapter now parses the AWS EventBridge "Object Created" envelope in addition to
+  the classic S3 `Records[]` format, so S3 → EventBridge → ingest (API Destination)
+  works without an input transformer.
+
+## [Unreleased] 2026-06-04
+### Added
 - Raw video geometry (`rawVideo`: width/height/fps/pixelFormat) is now carried
   end-to-end for headerless `.yuv` uploads. The events service persists it from
   the `upload.started` payload onto the video record (`raw_video`), and the

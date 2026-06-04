@@ -61,6 +61,24 @@ type storageEventObject struct {
 	Size int64  `json:"size"`
 }
 
+// eventBridgeEvent is the native envelope AWS EventBridge delivers for the
+// "Object Created" detail-type. Unlike the classic S3 notification (Records[]),
+// the object lives under detail.object. Used when S3 events reach the ingest
+// webhook via an EventBridge API Destination (see infra/aws/modules/events).
+type eventBridgeEvent struct {
+	DetailType string    `json:"detail-type"`
+	Time       time.Time `json:"time"`
+	Detail     struct {
+		Bucket struct {
+			Name string `json:"name"`
+		} `json:"bucket"`
+		Object struct {
+			Key  string `json:"key"`
+			Size int64  `json:"size"`
+		} `json:"object"`
+	} `json:"detail"`
+}
+
 func parseStorageKey(key string) (videoID, filename string) {
 	rawKey := key
 	if decodedKey, err := url.QueryUnescape(rawKey); err == nil {

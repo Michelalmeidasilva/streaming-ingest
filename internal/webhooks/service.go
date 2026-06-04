@@ -7,21 +7,30 @@ import (
 	"log"
 	"streaming-ingest/internal/adapters"
 	"streaming-ingest/internal/rabbitmq"
+	"streaming-ingest/internal/uploadstate"
 	"streaming-ingest/internal/videos"
 	"time"
 )
 
-type Service struct {
-	publisher rabbitmq.MessagePublisher
-	adapters  map[string]adapters.StorageAdapter
-	repo      videos.VideoRepository
+// UploadStatePatcher patches the per-video upload-state document. Satisfied by
+// *uploadstate.Service. Used to mark the storage-confirmed moment (stage 3).
+type UploadStatePatcher interface {
+	PatchVideo(ctx context.Context, videoID string, patch map[string]any) (*uploadstate.Video, error)
 }
 
-func NewService(pub rabbitmq.MessagePublisher, storageAdapters map[string]adapters.StorageAdapter, repo videos.VideoRepository) *Service {
+type Service struct {
+	publisher   rabbitmq.MessagePublisher
+	adapters    map[string]adapters.StorageAdapter
+	repo        videos.VideoRepository
+	uploadState UploadStatePatcher
+}
+
+func NewService(pub rabbitmq.MessagePublisher, storageAdapters map[string]adapters.StorageAdapter, repo videos.VideoRepository, uploadState UploadStatePatcher) *Service {
 	return &Service{
-		publisher: pub,
-		adapters:  storageAdapters,
-		repo:      repo,
+		publisher:   pub,
+		adapters:    storageAdapters,
+		repo:        repo,
+		uploadState: uploadState,
 	}
 }
 
@@ -70,6 +79,17 @@ func (s *Service) ProcessWebhook(provider string, payload []byte) error {
 	err = s.repo.Save(context.Background(), video)
 	if err != nil {
 		return fmt.Errorf("failed to save video metadata: %w", err)
+	}
+
+	// Stage 3: mark the object as confirmed/available in the upload-state store
+	// before publishing the event that triggers transcode, so the platform-upload
+	// surfaces "available" ahead of "queued". Provider-agnostic (minio + s3).
+	if s.uploadState != nil {
+		if _, perr := s.uploadState.PatchVideo(context.Background(), domainEvent.VideoID, map[string]any{
+			"storage_confirmed_at": time.Now().UTC(),
+		}); perr != nil && !errors.Is(perr, uploadstate.ErrNotFound) {
+			log.Printf("webhook: failed to patch storage_confirmed_at for %s: %v", domainEvent.VideoID, perr)
+		}
 	}
 
 	routingKey := fmt.Sprintf("video.%s", domainEvent.EventType)
