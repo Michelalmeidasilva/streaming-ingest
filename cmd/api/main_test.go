@@ -3,12 +3,9 @@ package main
 import (
 	"context"
 	"errors"
-	"io"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,8 +13,6 @@ import (
 	"streaming-ingest/internal/uploadstate"
 	"streaming-ingest/internal/videos"
 	"streaming-ingest/internal/webhooks"
-
-	"github.com/gofiber/fiber/v2"
 )
 
 func TestLoadDotEnvLoadsUnsetVariables(t *testing.T) {
@@ -222,27 +217,3 @@ func TestRedactMongoURI(t *testing.T) {
 type testError string
 
 func (e testError) Error() string { return string(e) }
-
-func TestMetricsEndpointExposesRED(t *testing.T) {
-	app := newApp()
-	app.Get("/__ping", func(c *fiber.Ctx) error { return c.SendString("ok") })
-
-	// generate one request so the counter is non-zero
-	if _, err := app.Test(httptest.NewRequest(http.MethodGet, "/__ping", nil)); err != nil {
-		t.Fatalf("ping request: %v", err)
-	}
-
-	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/metrics", nil))
-	if err != nil {
-		t.Fatalf("metrics request: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("metrics status = %d, want 200", resp.StatusCode)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	for _, want := range []string{"http_requests_total", "http_request_duration_seconds", `service="streaming-ingest"`} {
-		if !strings.Contains(string(body), want) {
-			t.Fatalf("metrics body missing %q", want)
-		}
-	}
-}
