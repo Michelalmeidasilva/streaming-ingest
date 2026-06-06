@@ -15,14 +15,12 @@ import (
 
 	"streaming-ingest/internal/adapters"
 	"streaming-ingest/internal/events"
-	intotel "streaming-ingest/internal/otel"
 	"streaming-ingest/internal/rabbitmq"
+	"streaming-ingest/internal/telemetry"
 	"streaming-ingest/internal/uploadstate"
 	"streaming-ingest/internal/videos"
 	"streaming-ingest/internal/webhooks"
 
-	fiberprometheus "github.com/ansrivas/fiberprometheus/v2"
-	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -36,17 +34,6 @@ type shutdowner interface {
 func main() {
 	if err := loadDotEnv(".env"); err != nil {
 		log.Printf("WARNING: could not load .env: %v", err)
-	}
-
-	otelShutdown, err := intotel.Init(context.Background())
-	if err != nil {
-		log.Printf("WARNING: OTEL init failed (continuing without tracing): %v", err)
-	} else {
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = otelShutdown(ctx)
-		}()
 	}
 
 	app := newApp()
@@ -124,10 +111,7 @@ func newApp() *fiber.App {
 		DisableStartupMessage: true,
 	})
 	app.Use(logger.New())
-	app.Use(otelfiber.Middleware())
-	prometheus := fiberprometheus.New("streaming-ingest")
-	prometheus.RegisterAt(app, "/metrics")
-	app.Use(prometheus.Middleware)
+	app.Use(telemetry.New("streaming-ingest").Middleware())
 	return app
 }
 
