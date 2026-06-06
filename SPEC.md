@@ -47,8 +47,11 @@ Storage-synced video list. Array of `DomainEvent`-shaped records.
 ### GET /api/v1/videos/database
 MongoDB catalog (`videos_catalog` collection). Array of `VideoRecord`.
 
-### GET /metrics
-Prometheus metrics (text/plain). `http_requests_total` and `http_request_duration_seconds` with labels `service,status_code,method,path`. See `docs/observability-metrics.md`.
+### Telemetry (CloudWatch EMF)
+Per-request telemetry is emitted to stdout as CloudWatch Embedded Metric Format (EMF).
+Each request produces one JSON line with RED metrics (`RequestCount`, `RequestLatency` ms,
+`ErrorCount`) under namespace `VOD/streaming-ingest`, dimensions `service/route/method`.
+`GET /metrics` has been removed. See `docs/cloudwatch-emf-telemetry.md`.
 
 ### GET /health
 ```json

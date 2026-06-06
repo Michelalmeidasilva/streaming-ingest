@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] 2026-06-06
+### Changed
+- Telemetry now emits CloudWatch EMF to stdout (RED per request: `RequestCount`, `RequestLatency`, `ErrorCount`; dimensions `service/route/method`; namespace `VOD/streaming-ingest`).
+### Removed
+- OTel SDK push pipeline (`internal/otel/`, `otelfiber` middleware) and the Prometheus `/metrics` endpoint (`fiberprometheus` middleware) with related deps.
+
 ## [Unreleased] 2026-06-04
 ### Added
 - Webhook writes `storage_confirmed_at` to the upload-state video on `ObjectCreated`,
