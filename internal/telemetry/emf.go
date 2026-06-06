@@ -6,7 +6,9 @@ package telemetry
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,6 +19,7 @@ type Emitter struct {
 	Service string
 	Out     io.Writer
 	Now     func() time.Time
+	mu      sync.Mutex
 }
 
 // New returns an Emitter writing to stdout with the real clock.
@@ -52,9 +55,12 @@ func (e *Emitter) Emit(route, method string, status int, latency time.Duration) 
 	}
 	b, err := json.Marshal(record)
 	if err != nil {
+		log.Printf("telemetry: failed to marshal EMF record: %v", err)
 		return
 	}
+	e.mu.Lock()
 	_, _ = e.Out.Write(append(b, '\n'))
+	e.mu.Unlock()
 }
 
 // Middleware returns a Fiber handler that emits one EMF record per request.
