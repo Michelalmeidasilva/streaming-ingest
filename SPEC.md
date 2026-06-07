@@ -76,6 +76,17 @@ Canonical per-video lifecycle document. Key fields:
 
 Populated by storage webhooks and the storage-sync backfill. Contains `videoId`, `filename`, `size`, `provider`, `status`, `url`, `createdAt`.
 
+### Indexes
+
+Ensured at startup (`internal/mongoindex`, wired in `cmd/api/main.go`); idempotent and non-fatal on failure:
+
+| Collection | Index | Purpose |
+|---|---|---|
+| `videos` | `video_id` (unique) | per-video lookups/upserts; guards against duplicate docs |
+| `videos` | `created_at` (desc) | upload-state list sort polled by the admin UI |
+| `videos_catalog` | `video_id` (unique) | catalog upsert/lookup key |
+| `upload_sessions` | `session_id` (unique) | multipart session lookup key |
+
 ## Storage Adapters
 
 ### MinIO (`minio_adapter.go`)

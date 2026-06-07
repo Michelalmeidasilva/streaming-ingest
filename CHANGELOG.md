@@ -1,6 +1,8 @@
 # Changelog
 
 ## [Unreleased] 2026-06-06
+### Added
+- MongoDB index creation at startup (`internal/mongoindex`, wired in `cmd/api/main.go`): unique `video_id` on `videos_catalog` and `videos`, unique `session_id` on `upload_sessions`, and `created_at` (desc) on `videos`. These back the per-video lookups and the upload-state list sort polled by the admin UI; without them the queries were full collection scans (COLLSCAN). Idempotent and non-fatal on failure (logs a warning, e.g. on a pre-existing duplicate that would break a unique index).
 ### Changed
 - Telemetry now emits CloudWatch EMF to stdout (RED per request: `RequestCount`, `RequestLatency`, `ErrorCount`; dimensions `service/route/method`; namespace `VOD/streaming-ingest`).
 ### Removed

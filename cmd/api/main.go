@@ -15,6 +15,7 @@ import (
 
 	"streaming-ingest/internal/adapters"
 	"streaming-ingest/internal/events"
+	"streaming-ingest/internal/mongoindex"
 	"streaming-ingest/internal/rabbitmq"
 	"streaming-ingest/internal/telemetry"
 	"streaming-ingest/internal/uploadstate"
@@ -57,6 +58,7 @@ func main() {
 		}
 	}()
 	log.Println("Connected to MongoDB successfully.")
+	ensureMongoIndexes(mongoClient, "streaming")
 	// The videos service (events `upload.started`, storage webhooks, catalog
 	// handler) owns its own collection. The upload-state store keeps the canonical
 	// per-video lifecycle document (thumbnail/transcode/playback) in `videos`.
@@ -188,6 +190,24 @@ func retry[T any](attempts int, delay time.Duration, operation func() (T, error)
 	}
 
 	return zero, lastErr
+}
+
+// ensureMongoIndexes creates the indexes the gateway relies on. Failures are
+// logged but non-fatal: a missing index degrades to a slower scan, not an
+// outage (and a unique-index conflict from pre-existing duplicates must not
+// block startup).
+func ensureMongoIndexes(client *mongo.Client, dbName string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	db := client.Database(dbName)
+	err := mongoindex.EnsureIndexes(ctx, func(name string) mongoindex.IndexManager {
+		return db.Collection(name).Indexes()
+	})
+	if err != nil {
+		log.Printf("WARNING: could not ensure MongoDB indexes (continuing): %v", err)
+		return
+	}
+	log.Println("MongoDB indexes ensured.")
 }
 
 func connectMongo(uri string) (*mongo.Client, error) {
