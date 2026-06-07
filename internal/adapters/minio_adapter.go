@@ -64,7 +64,7 @@ func (a *MinioAdapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 
 	videoID, filename := parseStorageKey(record.S3.Object.Key)
 
-	return newStorageDomainEvent(videoID, filename, record.S3.Object.Size, "minio", record.EventTime), nil
+	return newStorageDomainEvent(videoID, filename, record.S3.Object.Key, record.S3.Object.Size, "minio", record.EventTime), nil
 }
 
 func (a *MinioAdapter) ListVideos(bucket string) ([]DomainEvent, error) {
@@ -80,4 +80,3 @@ func (a *MinioAdapter) GenerateURL(bucket, key string) (string, error) {
 	}
 	return generatePresignedURL(a.client, bucket, key)
 }
-

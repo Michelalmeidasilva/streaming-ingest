@@ -55,7 +55,7 @@ func (a *S3Adapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 		if videoID == filename {
 			videoID = "unknown"
 		}
-		return newStorageDomainEvent(videoID, filename, record.S3.Object.Size, "aws-s3", record.EventTime), nil
+		return newStorageDomainEvent(videoID, filename, record.S3.Object.Key, record.S3.Object.Size, "aws-s3", record.EventTime), nil
 	}
 
 	// Fall back to the EventBridge "Object Created" envelope (S3 → EventBridge → ingest).
@@ -76,7 +76,7 @@ func (a *S3Adapter) ParseEvent(payload []byte) (*DomainEvent, error) {
 	if videoID == filename {
 		videoID = "unknown"
 	}
-	return newStorageDomainEvent(videoID, filename, eb.Detail.Object.Size, "aws-s3", eb.Time), nil
+	return newStorageDomainEvent(videoID, filename, eb.Detail.Object.Key, eb.Detail.Object.Size, "aws-s3", eb.Time), nil
 }
 
 func (a *S3Adapter) ListVideos(bucket string) ([]DomainEvent, error) {
@@ -92,4 +92,3 @@ func (a *S3Adapter) GenerateURL(bucket, key string) (string, error) {
 	}
 	return generatePresignedURL(a.client, bucket, key)
 }
-

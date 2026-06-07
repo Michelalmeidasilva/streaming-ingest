@@ -4,9 +4,13 @@ import "time"
 
 // DomainEvent is the standardized event structure published to RabbitMQ
 type DomainEvent struct {
-	EventType  string    `json:"eventType"` // e.g. upload.completed
-	VideoID    string    `json:"videoId"`
-	Filename   string    `json:"filename"`
+	EventType string `json:"eventType"` // e.g. upload.completed
+	VideoID   string `json:"videoId"`
+	Filename  string `json:"filename"`
+	// ObjectKey is the full storage key (e.g. `raw/<videoId>/<filename>`). The
+	// transcoder downloads from this exact key; reconstructing it from
+	// videoId+filename would drop multi-segment prefixes like `raw/`.
+	ObjectKey  string    `json:"objectKey,omitempty"`
 	Size       int64     `json:"size"`
 	Provider   string    `json:"provider"`
 	OccurredAt time.Time `json:"occurredAt"`

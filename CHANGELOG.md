@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased] 2026-06-07
+### Fixed
+- Storage webhook `DomainEvent` now carries `objectKey` (the full storage key, e.g. `raw/<videoId>/<filename>`). Previously only the derived `videoId`/`filename` (basename) were published, so the transcoder reconstructed `<videoId>/<filename>` and **dropped the `raw/` prefix** → download failed with `The specified key does not exist` on the dev RabbitMQ→worker path. The `objectKey` field is populated in both adapters (`minio`/`s3`, classic `Records[]` and EventBridge envelopes) and the worker downloads it verbatim. Field added to `adapters.DomainEvent`; `newStorageDomainEvent` now takes the full key.
+
 ## [Unreleased] 2026-06-06
 ### Added
 - MongoDB index creation at startup (`internal/mongoindex`, wired in `cmd/api/main.go`): unique `video_id` on `videos_catalog` and `videos`, unique `session_id` on `upload_sessions`, and `created_at` (desc) on `videos`. These back the per-video lookups and the upload-state list sort polled by the admin UI; without them the queries were full collection scans (COLLSCAN). Idempotent and non-fatal on failure (logs a warning, e.g. on a pre-existing duplicate that would break a unique index).

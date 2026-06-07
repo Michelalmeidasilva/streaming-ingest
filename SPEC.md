@@ -32,7 +32,7 @@ Object-storage `ObjectCreated` webhook. Provider must be `minio` or `s3`.
 - 400 unsupported provider or parse error
 
 **Processing order on `ObjectCreated`** (all steps for `minio` and `s3`):
-1. Parse provider envelope → `DomainEvent`.
+1. Parse provider envelope → `DomainEvent`. The event carries `objectKey` (the **full** storage key, e.g. `raw/<videoId>/<filename>`) alongside the derived `videoId`/`filename`, so the transcoder downloads the exact key instead of reconstructing it (which would drop the `raw/` prefix).
 2. Save video metadata to `videos_catalog` collection.
 3. Patch upload-state video with `{ storage_confirmed_at: now }` (RFC3339). If no upload-state document exists (`ErrNotFound`), the error is logged and processing continues — this handles uploads done outside the platform-upload UI.
 4. Publish `video.upload.completed` to RabbitMQ `video_events` Topic Exchange.
@@ -110,7 +110,7 @@ Accepts **two** envelope formats:
    ```
    This format is required on the AWS delivery path: `S3 ObjectCreated → EventBridge rule → API Destination → POST /api/v1/webhooks/storage/s3` with no input transformer. Both formats map to the same `DomainEvent`.
 
-Object key format: `<videoId>/<filename>` (local) or `raw/<videoId>/<filename>` (AWS). `parseStorageKey` takes the penultimate path segment as `videoId`.
+Object key format: `raw/<videoId>/<filename>` (both local MinIO and AWS — the platform-upload writes the `raw/` prefix everywhere). `parseStorageKey` takes the penultimate path segment as `videoId` and the last as `filename`; the **full** key is also forwarded on the event as `objectKey` so the transcoder downloads it verbatim (a reconstructed `<videoId>/<filename>` would drop `raw/` and fail).
 
 ## RabbitMQ
 

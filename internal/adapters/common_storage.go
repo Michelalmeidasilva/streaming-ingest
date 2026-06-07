@@ -96,11 +96,12 @@ func parseStorageKey(key string) (videoID, filename string) {
 	return videoID, filename
 }
 
-func newStorageDomainEvent(videoID, filename string, size int64, provider string, occurredAt time.Time) *DomainEvent {
+func newStorageDomainEvent(videoID, filename, objectKey string, size int64, provider string, occurredAt time.Time) *DomainEvent {
 	return &DomainEvent{
 		EventType:  "upload.completed",
 		VideoID:    videoID,
 		Filename:   filename,
+		ObjectKey:  objectKey,
 		Size:       size,
 		Provider:   provider,
 		OccurredAt: occurredAt,
@@ -135,7 +136,7 @@ func listStorageVideos(client minioClientIface, bucket, provider string) ([]Doma
 		}
 
 		videoID, filename := parseStorageKey(object.Key)
-		videos = append(videos, *newStorageDomainEvent(videoID, filename, object.Size, provider, object.LastModified))
+		videos = append(videos, *newStorageDomainEvent(videoID, filename, object.Key, object.Size, provider, object.LastModified))
 	}
 
 	return videos, nil
