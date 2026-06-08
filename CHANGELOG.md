@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased] 2026-06-08 — rabbitmq: reconnect+retry no publish (corrige 500 em conexão velha)
+### Fixed
+- `internal/rabbitmq/publisher.go`: o `Publish` mantinha uma conexão/canal AMQP de longa
+  duração criados no startup. Na Lambda essa conexão fica **velha/fechada** (idle timeout do
+  CloudAMQP, freeze/thaw entre invocações), e o primeiro publish após o thaw falhava →
+  `POST /api/v1/events` retornava **500**. Isso fazia jobs de transcode (e eventos de UI)
+  falharem. Agora, na falha de publish, o publisher **reconecta e re-tenta uma vez** (com
+  mutex; re-declara o exchange; só troca a conexão em caso de sucesso). Testes:
+  `TestPublishReconnectsAndRetriesOnStaleConnection`, `TestPublishNoReconnectWithoutURL`.
+  Ver `docs/amqp-publish-reconnect.md`.
+
 ## [Unreleased] 2026-06-07
 ### Fixed
 - Storage webhook `DomainEvent` now carries `objectKey` (the full storage key, e.g. `raw/<videoId>/<filename>`). Previously only the derived `videoId`/`filename` (basename) were published, so the transcoder reconstructed `<videoId>/<filename>` and **dropped the `raw/` prefix** → download failed with `The specified key does not exist` on the dev RabbitMQ→worker path. The `objectKey` field is populated in both adapters (`minio`/`s3`, classic `Records[]` and EventBridge envelopes) and the worker downloads it verbatim. Field added to `adapters.DomainEvent`; `newStorageDomainEvent` now takes the full key.
