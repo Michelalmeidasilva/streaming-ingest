@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"streaming-ingest/internal/adapters"
@@ -89,6 +90,7 @@ func pendingVideoFromEvent(event FrontEndEvent) (*videos.Video, error) {
 		Status:    "uploading",
 		RawVideo:  rawVideoFromPayload(event.Payload),
 		Subtitles: subtitlesFromPayload(event.Payload),
+		Transcode: transcodeFromPayload(event.Payload),
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil
@@ -145,6 +147,52 @@ func rawVideoFromPayload(payload EventPayload) *adapters.RawVideoParams {
 		FPS:         fps,
 		PixelFormat: firstString(nested, "pixelFormat", "pixel_format"),
 	}
+}
+
+// transcodeFromPayload extracts the codec/resolution selection from an
+// upload.started event. Renditions without a positive width/height are skipped;
+// returns nil when nothing usable is present (transcoder falls back to defaults).
+func transcodeFromPayload(payload EventPayload) *adapters.TranscodeRequest {
+	raw, ok := payload["transcode"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	nested := EventPayload(raw)
+
+	var codecs []string
+	if list, ok := nested["codecs"].([]interface{}); ok {
+		for _, c := range list {
+			if s, ok := c.(string); ok && strings.TrimSpace(s) != "" {
+				codecs = append(codecs, strings.TrimSpace(s))
+			}
+		}
+	}
+
+	var renditions []adapters.RequestedRendition
+	if list, ok := nested["renditions"].([]interface{}); ok {
+		for _, item := range list {
+			entry, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			e := EventPayload(entry)
+			w := int(firstInt64(e, "width"))
+			h := int(firstInt64(e, "height"))
+			if w <= 0 || h <= 0 {
+				continue
+			}
+			renditions = append(renditions, adapters.RequestedRendition{
+				Width:  w,
+				Height: h,
+				Codec:  firstString(e, "codec", "videoCodec"),
+			})
+		}
+	}
+
+	if len(codecs) == 0 && len(renditions) == 0 {
+		return nil
+	}
+	return &adapters.TranscodeRequest{Codecs: codecs, Renditions: renditions}
 }
 
 func firstFloat64(payload EventPayload, keys ...string) float64 {

@@ -287,6 +287,31 @@ func (m *mockVideoRepository) FindByVideoID(ctx context.Context, videoID string)
 	return nil, nil
 }
 
+func TestTranscodeFromPayload(t *testing.T) {
+	payload := EventPayload{
+		"transcode": map[string]interface{}{
+			"codecs": []interface{}{"h264", "av1"},
+			"renditions": []interface{}{
+				map[string]interface{}{"width": float64(1280), "height": float64(720), "codec": "h264"},
+				map[string]interface{}{"width": float64(1280), "height": float64(720), "codec": "av1"},
+			},
+		},
+	}
+	got := transcodeFromPayload(payload)
+	if got == nil || len(got.Renditions) != 2 || len(got.Codecs) != 2 {
+		t.Fatalf("expected 2 renditions and 2 codecs, got %+v", got)
+	}
+	if got.Renditions[0].Width != 1280 || got.Renditions[0].Height != 720 || got.Renditions[0].Codec != "h264" {
+		t.Fatalf("unexpected first rendition: %+v", got.Renditions[0])
+	}
+}
+
+func TestTranscodeFromPayloadNilWhenAbsent(t *testing.T) {
+	if got := transcodeFromPayload(EventPayload{}); got != nil {
+		t.Fatalf("expected nil when no transcode key, got %+v", got)
+	}
+}
+
 func TestFirstInt64(t *testing.T) {
 	payload := EventPayload{
 		"int":     1,
