@@ -25,7 +25,10 @@ type Video struct {
 	// Subtitles are sidecar .srt tracks uploaded with the video, persisted at
 	// upload.started and forwarded to the transcoder on the webhook.
 	Subtitles []adapters.SubtitleRef `bson:"subtitles,omitempty" json:"subtitles,omitempty"`
-	CreatedAt time.Time              `bson:"created_at" json:"createdAt"`
+	// Transcode is the codec/resolution selection persisted at upload.started and
+	// carried to the transcoder by the storage webhook.
+	Transcode *adapters.TranscodeRequest `bson:"transcode,omitempty" json:"transcode,omitempty"`
+	CreatedAt time.Time                  `bson:"created_at" json:"createdAt"`
 	UpdatedAt time.Time              `bson:"updated_at" json:"updatedAt"`
 }
 

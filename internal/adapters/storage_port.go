@@ -22,6 +22,9 @@ type DomainEvent struct {
 	// Subtitles are sidecar .srt tracks uploaded with the video, looked up from
 	// the persisted record and forwarded so the transcoder can package WebVTT.
 	Subtitles []SubtitleRef `json:"subtitles,omitempty"`
+	// Transcode is the codec/resolution selection made at upload time, persisted
+	// on the record and forwarded to the transcoder. nil = transcoder defaults.
+	Transcode *TranscodeRequest `json:"transcode,omitempty"`
 }
 
 // SubtitleRef points at a sidecar subtitle source (.srt) in storage and its
@@ -39,6 +42,19 @@ type RawVideoParams struct {
 	Height      int     `json:"height" bson:"height"`
 	FPS         float64 `json:"fps" bson:"fps"`
 	PixelFormat string  `json:"pixelFormat,omitempty" bson:"pixel_format,omitempty"`
+}
+
+// TranscodeRequest mirrors streaming-transcode's domain.TranscodeRequest so the
+// selection survives the trip through RabbitMQ unchanged.
+type TranscodeRequest struct {
+	Codecs     []string             `json:"codecs,omitempty" bson:"codecs,omitempty"`
+	Renditions []RequestedRendition `json:"renditions,omitempty" bson:"renditions,omitempty"`
+}
+
+type RequestedRendition struct {
+	Width  int    `json:"width" bson:"width"`
+	Height int    `json:"height" bson:"height"`
+	Codec  string `json:"codec,omitempty" bson:"codec,omitempty"`
 }
 
 // StorageAdapter parses provider-specific webhooks into domain events
