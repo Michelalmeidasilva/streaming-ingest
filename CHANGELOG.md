@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased] 2026-06-09
+### Added
+- Persiste e encaminha a seleção `transcode` do `upload.started` ao evento de transcode (espelho do `rawVideo`): novos campos `Transcode *TranscodeRequest` no `DomainEvent` (pacote `adapters`) e no registro `Video` (pacote `videos`). A função `transcodeFromPayload` extrai `codecs[]` e `renditions[{width,height,codec}]` do payload do evento; o handler de webhook faz lookup pelo `videoId` e copia o campo para o evento publicado no RabbitMQ. Quando ausente, o transcoder usa seus defaults.
+
 ## [Unreleased] 2026-06-07
 ### Fixed
 - Storage webhook `DomainEvent` now carries `objectKey` (the full storage key, e.g. `raw/<videoId>/<filename>`). Previously only the derived `videoId`/`filename` (basename) were published, so the transcoder reconstructed `<videoId>/<filename>` and **dropped the `raw/` prefix** → download failed with `The specified key does not exist` on the dev RabbitMQ→worker path. The `objectKey` field is populated in both adapters (`minio`/`s3`, classic `Records[]` and EventBridge envelopes) and the worker downloads it verbatim. Field added to `adapters.DomainEvent`; `newStorageDomainEvent` now takes the full key.

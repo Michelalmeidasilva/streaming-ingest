@@ -20,6 +20,7 @@ Frontend lifecycle events (`upload.started`, `upload.progress`, `upload.complete
 The `upload.started` payload may carry optional fields persisted on the upload-state video record:
 - `rawVideo` — `{ width, height, fps, pixelFormat }` for headerless `.yuv` uploads.
 - `subtitles` — `[{ objectKey, language, label }]` sidecar subtitle references.
+- `transcode` — `{ codecs: string[], renditions: [{ width, height, codec }] }` codec/resolution selection made at upload time. Persisted on the video record and forwarded to the transcoder on `ObjectCreated` (same mechanism as `rawVideo`). When absent the transcoder falls back to defaults.
 
 ### POST /api/v1/webhooks/storage/:provider
 Object-storage `ObjectCreated` webhook. Provider must be `minio` or `s3`.
