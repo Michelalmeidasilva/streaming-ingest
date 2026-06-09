@@ -61,6 +61,9 @@ func (s *Service) ProcessWebhook(provider string, payload []byte) error {
 		if len(existing.Subtitles) > 0 {
 			domainEvent.Subtitles = existing.Subtitles
 		}
+		if existing.Transcode != nil {
+			domainEvent.Transcode = existing.Transcode
+		}
 	}
 
 	// Save metadata to MongoDB
@@ -72,6 +75,7 @@ func (s *Service) ProcessWebhook(provider string, payload []byte) error {
 		Status:    "uploaded",
 		RawVideo:  domainEvent.RawVideo,
 		Subtitles: domainEvent.Subtitles,
+		Transcode: domainEvent.Transcode,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}

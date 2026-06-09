@@ -346,3 +346,39 @@ func TestProcessWebhookForwardsPersistedRawVideo(t *testing.T) {
 		t.Fatalf("saved rawVideo not preserved: %+v", repo.savedVideos)
 	}
 }
+
+func TestProcessWebhookForwardsPersistedTranscode(t *testing.T) {
+	pub := &mockPublisher{}
+	tr := &adapters.TranscodeRequest{
+		Codecs:     []string{"h264"},
+		Renditions: []adapters.RequestedRendition{{Width: 1280, Height: 720, Codec: "h264"}},
+	}
+	repo := &mockVideoRepository{findResult: &videos.Video{VideoID: "v2", Transcode: tr}}
+	svc := &Service{
+		publisher: pub,
+		adapters: map[string]adapters.StorageAdapter{
+			"minio": &mockStorageAdapter{parseEventResult: &adapters.DomainEvent{
+				EventType: "upload.completed", VideoID: "v2", Filename: "video.mp4",
+			}},
+		},
+		repo: repo,
+	}
+
+	if err := svc.ProcessWebhook("minio", []byte(`{}`)); err != nil {
+		t.Fatalf("ProcessWebhook() error = %v", err)
+	}
+
+	// The published event must carry the transcode selection.
+	if len(pub.payloads) != 1 {
+		t.Fatalf("published %d events, want 1", len(pub.payloads))
+	}
+	event, ok := pub.payloads[0].(*adapters.DomainEvent)
+	if !ok || event.Transcode == nil || len(event.Transcode.Renditions) != 1 || event.Transcode.Renditions[0].Height != 720 {
+		t.Fatalf("published transcode = %+v", pub.payloads[0])
+	}
+
+	// And the saved record must preserve it.
+	if len(repo.savedVideos) != 1 || repo.savedVideos[0].Transcode == nil {
+		t.Fatalf("saved transcode not preserved: %+v", repo.savedVideos)
+	}
+}
