@@ -15,7 +15,9 @@ Frontend lifecycle events (`upload.started`, `upload.progress`, `upload.complete
 ```
 
 - 400 validation failure
-- 500 broker or processing error
+- 500 broker or processing error — the AMQP publisher reconnects and retries once on a
+  stale connection before returning 500 (Lambda keeps a long-lived connection that the
+  broker idle-times-out / that freeze-thaw breaks). See `docs/amqp-publish-reconnect.md`.
 
 The `upload.started` payload may carry optional fields persisted on the upload-state video record:
 - `rawVideo` — `{ width, height, fps, pixelFormat }` for headerless `.yuv` uploads.

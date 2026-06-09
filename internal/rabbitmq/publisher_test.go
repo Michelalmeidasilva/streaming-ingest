@@ -283,6 +283,58 @@ func TestPublishSuccessAndFailure(t *testing.T) {
 	})
 }
 
+func TestPublishReconnectsAndRetriesOnStaleConnection(t *testing.T) {
+	originalDial := dialAMQP
+	t.Cleanup(func() { dialAMQP = originalDial })
+
+	var dialed int
+	dialAMQP = func(url string) (connectionAPI, error) {
+		dialed++
+		// Fresh connection whose channel publishes successfully (nil func = success).
+		return &mockConnection{channelFunc: func() (channelAPI, error) {
+			return &mockChannel{}, nil
+		}}, nil
+	}
+
+	// Initial channel simulates a stale connection: the first publish fails.
+	pub := &Publisher{
+		url:  "amqp://stale-host",
+		conn: &mockConnection{},
+		channel: &mockChannel{
+			publishWithContextFunc: func(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+				return errors.New("channel/connection is not open")
+			},
+		},
+	}
+
+	if err := pub.Publish("video.test", map[string]string{"hello": "world"}); err != nil {
+		t.Fatalf("Publish should succeed after reconnect, got %v", err)
+	}
+	if dialed != 1 {
+		t.Fatalf("expected exactly one reconnect dial, got %d", dialed)
+	}
+}
+
+func TestPublishNoReconnectWithoutURL(t *testing.T) {
+	originalDial := dialAMQP
+	t.Cleanup(func() { dialAMQP = originalDial })
+	dialAMQP = func(url string) (connectionAPI, error) {
+		t.Fatalf("reconnect must not be attempted when url is empty")
+		return nil, nil
+	}
+	pub := &Publisher{
+		conn: &mockConnection{},
+		channel: &mockChannel{
+			publishWithContextFunc: func(ctx context.Context, exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error {
+				return errors.New("publish failed")
+			},
+		},
+	}
+	if err := pub.Publish("video.test", map[string]string{"a": "b"}); err == nil || !contains(err.Error(), "failed to publish message") {
+		t.Fatalf("Publish() error = %v, want publish failure", err)
+	}
+}
+
 func TestPublishPayloadMarshaling(t *testing.T) {
 	// Test that Publish can handle various payload types
 	tests := []struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -60,6 +61,8 @@ var dialAMQP = func(url string) (connectionAPI, error) {
 }
 
 type Publisher struct {
+	url     string
+	mu      sync.Mutex
 	conn    connectionAPI
 	channel channelAPI
 }
@@ -93,9 +96,39 @@ func NewPublisher(url string) (*Publisher, error) {
 	}
 
 	return &Publisher{
+		url:     url,
 		conn:    conn,
 		channel: ch,
 	}, nil
+}
+
+// reconnect re-establishes the AMQP connection, channel and exchange. It only
+// swaps in the new connection on full success, so a failed reconnect leaves the
+// previous (possibly stale) connection in place for the next attempt.
+func (p *Publisher) reconnect() error {
+	conn, err := dialAMQP(p.url)
+	if err != nil {
+		return fmt.Errorf("reconnect dial: %w", err)
+	}
+	ch, err := conn.Channel()
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("reconnect channel: %w", err)
+	}
+	if err := ch.ExchangeDeclare("video_events", "topic", true, false, false, false, nil); err != nil {
+		_ = ch.Close()
+		_ = conn.Close()
+		return fmt.Errorf("reconnect exchange: %w", err)
+	}
+	if p.channel != nil {
+		_ = p.channel.Close()
+	}
+	if p.conn != nil {
+		_ = p.conn.Close()
+	}
+	p.conn = conn
+	p.channel = ch
+	return nil
 }
 
 func (p *Publisher) Publish(routingKey string, payload interface{}) error {
@@ -112,7 +145,27 @@ func (p *Publisher) Publish(routingKey string, payload interface{}) error {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	err = p.channel.PublishWithContext(
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	pubErr := p.publish(routingKey, body)
+	if pubErr != nil && p.url != "" {
+		// In Lambda the long-lived AMQP connection goes stale (CloudAMQP idle
+		// timeout, freeze/thaw) and the first publish after a thaw fails. Reconnect
+		// and retry once before surfacing a 500 — a transient broker hiccup must not
+		// fail the caller (e.g. the transcode worker's lifecycle events).
+		if rcErr := p.reconnect(); rcErr == nil {
+			pubErr = p.publish(routingKey, body)
+		}
+	}
+	if pubErr != nil {
+		return fmt.Errorf("failed to publish message: %w", pubErr)
+	}
+	return nil
+}
+
+func (p *Publisher) publish(routingKey string, body []byte) error {
+	return p.channel.PublishWithContext(
 		context.Background(),
 		"video_events",
 		routingKey,
@@ -123,11 +176,6 @@ func (p *Publisher) Publish(routingKey string, payload interface{}) error {
 			Body:        body,
 		},
 	)
-	if err != nil {
-		return fmt.Errorf("failed to publish message: %w", err)
-	}
-
-	return nil
 }
 
 func (p *Publisher) Close() {
