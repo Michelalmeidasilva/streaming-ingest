@@ -13,6 +13,12 @@ func NewService(repo Repository) *Service {
 	return &Service{repo: repo}
 }
 
+// RecordBenchmarkRun forces Benchmark=true and persists one benchmark measurement.
+func (s *Service) RecordBenchmarkRun(ctx context.Context, run Run) error {
+	run.Benchmark = true
+	return s.repo.Insert(ctx, run)
+}
+
 // UpsertFromEvent maps a transcode.completed payload to a Run and persists it.
 // A payload without a jobId is ignored (it is not a completed transcode).
 func (s *Service) UpsertFromEvent(ctx context.Context, payload map[string]interface{}) error {

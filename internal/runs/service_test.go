@@ -5,10 +5,13 @@ import (
 	"testing"
 )
 
-type capturingRepo struct{ last Run }
+type capturingRepo struct {
+	last       Run
+	lastInsert Run
+}
 
 func (c *capturingRepo) Upsert(_ context.Context, run Run) error             { c.last = run; return nil }
-func (c *capturingRepo) Insert(_ context.Context, run Run) error             { c.last = run; return nil }
+func (c *capturingRepo) Insert(_ context.Context, run Run) error             { c.lastInsert = run; return nil }
 func (c *capturingRepo) List(context.Context, Filter) ([]Run, error)         { return nil, nil }
 func (c *capturingRepo) GetByVideoID(context.Context, string) ([]Run, error) { return nil, nil }
 
@@ -71,6 +74,19 @@ func TestUpsertFromEventMapsFields(t *testing.T) {
 	r := got.Renditions[0]
 	if r.Codec != "h264" || r.ElapsedSeconds != 20 || r.AvgCPUPercent != 180 || r.OutputBitrateKbps != 2950 {
 		t.Fatalf("rendition mapping wrong: %#v", r)
+	}
+}
+
+func TestRecordBenchmarkRunInserts(t *testing.T) {
+	repo := &capturingRepo{}
+	svc := NewService(repo)
+	in := Run{MachineLabel: "c5.xlarge", Clip: "a.mp4", Repetition: 2,
+		Renditions: []RunRendition{{Codec: "av1", Width: 1280, Height: 720, ElapsedSeconds: 9}}}
+	if err := svc.RecordBenchmarkRun(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if !repo.lastInsert.Benchmark || repo.lastInsert.Clip != "a.mp4" || repo.lastInsert.MachineLabel != "c5.xlarge" {
+		t.Fatalf("benchmark run not recorded correctly: %#v", repo.lastInsert)
 	}
 }
 

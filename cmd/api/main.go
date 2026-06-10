@@ -87,6 +87,7 @@ func main() {
 	eventsService := events.NewService(pub, eventRepo, videoRepo)
 	eventsService.SetRunWriter(runs.NewService(runsRepo))
 	runsHandler := runs.NewHandler(runsRepo)
+	runsHandler.SetBenchmarkWriter(runs.NewService(runsRepo))
 	eventsHandler := events.NewHandler(eventsService)
 
 	uploadStateService := uploadstate.NewService(uploadStateRepo)
@@ -146,6 +147,7 @@ func registerRoutes(app *fiber.App, eventsHandler *events.Handler, webhookHandle
 	v1.Delete("/upload-state/videos/:videoId", uploadStateHandler.DeleteVideo)
 	v1.Get("/runs", runsHandler.ListRuns)
 	v1.Get("/runs/:videoId", runsHandler.GetRuns)
+	v1.Post("/benchmark-runs", runsHandler.CreateBenchmarkRun)
 }
 
 func createStorageAdapters() map[string]adapters.StorageAdapter {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
@@ -24,6 +25,49 @@ func (s *stubReader) List(_ context.Context, f Filter) ([]Run, error) {
 func (s *stubReader) GetByVideoID(_ context.Context, videoID string) ([]Run, error) {
 	s.gotVideoID = videoID
 	return s.byVideo, nil
+}
+
+type stubWriter struct{ last Run }
+
+func (s *stubWriter) RecordBenchmarkRun(_ context.Context, run Run) error { s.last = run; return nil }
+
+func TestCreateBenchmarkRun(t *testing.T) {
+	w := &stubWriter{}
+	app := fiber.New()
+	h := NewHandler(&stubReader{})
+	h.SetBenchmarkWriter(w)
+	app.Post("/api/v1/benchmark-runs", h.CreateBenchmarkRun)
+
+	body := `{"machineLabel":"c5.xlarge","clip":"a.mp4","repetition":1,"renditions":[{"codec":"av1","width":1280,"height":720,"elapsedSeconds":9}]}`
+	req := httptest.NewRequest("POST", "/api/v1/benchmark-runs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 202 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if w.last.MachineLabel != "c5.xlarge" || len(w.last.Renditions) != 1 || w.last.Renditions[0].Codec != "av1" {
+		t.Fatalf("not recorded: %#v", w.last)
+	}
+}
+
+func TestListRunsBenchmarkParam(t *testing.T) {
+	stub := &stubReader{listResult: []Run{{JobID: "a"}}}
+	app := fiber.New()
+	h := NewHandler(stub)
+	app.Get("/api/v1/runs", h.ListRuns)
+	resp, err := app.Test(httptest.NewRequest("GET", "/api/v1/runs?benchmark=true", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if stub.listFilter.Benchmark == nil || *stub.listFilter.Benchmark != true {
+		t.Fatalf("benchmark filter not parsed: %#v", stub.listFilter.Benchmark)
+	}
 }
 
 func TestListRunsAppliesFilters(t *testing.T) {
