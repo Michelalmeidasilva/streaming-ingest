@@ -22,12 +22,20 @@ documents. The `benchmark` boolean field is the partition key.
 | `repetition` | `repetition` | int | Repeat index within the matrix cell (1-based) |
 | `benchmark` | `benchmark` | bool | Always `true` for documents written via this endpoint |
 | `elapsed_seconds` | `elapsedSeconds` | float64 | Wall-clock encode time for all renditions |
+| `source_width` | `sourceWidth` | int | Source clip width in pixels (0 if probe failed) |
+| `source_height` | `sourceHeight` | int | Source clip height in pixels (0 if probe failed) |
+| `source_duration_seconds` | `sourceDurationSeconds` | float64 | Source clip duration in seconds (0 if probe failed) |
+| `source_fps` | `sourceFps` | float64 | Source clip frame rate (0 if probe failed) |
+| `source_codec` | `sourceCodec` | string | Source clip video codec, e.g. `h264` (empty if probe failed) |
+| `source_bitrate_kbps` | `sourceBitrateKbps` | int | Source clip container bitrate in kbps (0 if probe failed) |
+| `source_file_size_bytes` | `sourceFileSizeBytes` | int64 | Source clip file size in bytes (0 if probe failed) |
 | `renditions` | `renditions` | array | Per-rendition metrics (name, codec, elapsed, avg/max CPU, output bitrate, etc.) |
 | `completed_at` | `completedAt` | time.Time | Timestamp from the request payload |
 | `created_at` | `createdAt` | time.Time | Time of insert |
 
-Production-only fields (`videoId`, `rtf`, `sourceFileSizeBytes`, `totalOutputSizeBytes`,
-`profile`) are not set by benchmark runs.
+Production-only fields (`videoId`, `rtf`, `totalOutputSizeBytes`, `profile`) are not set
+by benchmark runs. `sourceFileSizeBytes` is shared — production runs set it from the raw
+source; benchmark runs set it from the probed corpus clip.
 
 ## Endpoint Contract
 
@@ -44,6 +52,13 @@ Request:
   "repetition": 1,
   "benchmark": true,
   "elapsedSeconds": 28.4,
+  "sourceWidth": 1280,
+  "sourceHeight": 720,
+  "sourceDurationSeconds": 48.7,
+  "sourceFps": 29.97,
+  "sourceCodec": "h264",
+  "sourceBitrateKbps": 4200,
+  "sourceFileSizeBytes": 25559040,
   "completedAt": "2026-06-10T12:00:00Z",
   "renditions": [
     {

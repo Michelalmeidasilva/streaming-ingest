@@ -188,6 +188,12 @@ any queues.
 | `benchmark` | `benchmark` | bool? | `true` for benchmark runs; absent/false for production runs |
 | `clip` | `clip` | string? | S3 key of the corpus clip (benchmark runs only) |
 | `repetition` | `repetition` | int? | Repeat index within the matrix cell (benchmark runs only) |
+| `source_width` | `sourceWidth` | int? | Source clip width in pixels (benchmark runs) |
+| `source_height` | `sourceHeight` | int? | Source clip height in pixels (benchmark runs) |
+| `source_duration_seconds` | `sourceDurationSeconds` | float64? | Source clip duration in seconds (benchmark runs) |
+| `source_fps` | `sourceFps` | float64? | Source clip frame rate (benchmark runs) |
+| `source_codec` | `sourceCodec` | string? | Source clip video codec, e.g. `h264` (benchmark runs) |
+| `source_bitrate_kbps` | `sourceBitrateKbps` | int? | Source clip container bitrate in kbps (benchmark runs) |
 | `renditions` | `renditions` | array | Per-rendition metrics (see below) |
 
 Each rendition entry: `name`, `codec`, `width`, `height`, `preset`,
