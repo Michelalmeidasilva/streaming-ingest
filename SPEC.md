@@ -248,3 +248,21 @@ MINIO_ENDPOINT       minio:9000
 MINIO_ROOT_USER      admin
 MINIO_ROOT_PASSWORD  password123
 ```
+
+## Transcode Selection Passthrough
+
+The gateway persists the upload-time `transcode` selection on the video record at
+`upload.started` and forwards it verbatim on the storage `upload.completed` webhook. The
+mirror struct `adapters.TranscodeRequest` carries:
+
+| Field | Type | Notes |
+|---|---|---|
+| `codecs` | `[]string` | requested codecs |
+| `protocols` | `[]string` | subset of `{hls,dash}` |
+| `segmentSeconds` | `int` | segment duration preset |
+| `renditions[]` | objects | `width`, `height`, `codec`, `bitrateKbps` |
+
+**Invariant:** every field the transcoder understands must be declared on this struct —
+anything missing is silently dropped on the round-trip. A contract test
+(`internal/adapters/transcode_contract_test.go`) pins the JSON shape. The gateway does not
+validate these values; the transcoder normalizes them. See `docs/streaming-format-controls.md`.

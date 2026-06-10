@@ -1,6 +1,10 @@
 # Changelog
 
 ## [Unreleased] 2026-06-10
+### Fixed
+- Carry `protocols`, `segmentSeconds`, and per-rendition `bitrateKbps` through the transcode passthrough. The typed `adapters.TranscodeRequest`/`RequestedRendition` mirror dropped any field it didn't declare, so per-rendition bitrate (already honored by the transcoder) and the new protocol/segment selections were silently lost on the `upload.started` → webhook hop. Added a contract test pinning the JSON round-trip. See `docs/streaming-format-controls.md`.
+
+## [Unreleased] 2026-06-10
 ### Added
 - POST /api/v1/benchmark-runs (inserts a benchmark=true run); GET /api/v1/runs?benchmark filter; benchmark/clip/repetition fields on transcode_runs. Benchmark runs never touch the video catalog.
 
