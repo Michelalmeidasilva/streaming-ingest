@@ -68,4 +68,10 @@ func TestEnsureIndexes_CreatesExpectedIndexes(t *testing.T) {
 	if !hasUniqueIndexOn(rec["upload_sessions"], "session_id") {
 		t.Errorf("upload_sessions: missing unique index on session_id, got %v", rec["upload_sessions"])
 	}
+	if !hasUniqueIndexOn(rec["transcode_runs"], "job_id") {
+		t.Errorf("transcode_runs: missing unique index on job_id, got %v", rec["transcode_runs"])
+	}
+	if !hasIndexOn(rec["transcode_runs"], "machine_label") {
+		t.Errorf("transcode_runs: missing index on machine_label, got %v", rec["transcode_runs"])
+	}
 }

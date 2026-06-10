@@ -17,6 +17,7 @@ import (
 	"streaming-ingest/internal/events"
 	"streaming-ingest/internal/mongoindex"
 	"streaming-ingest/internal/rabbitmq"
+	"streaming-ingest/internal/runs"
 	"streaming-ingest/internal/telemetry"
 	"streaming-ingest/internal/uploadstate"
 	"streaming-ingest/internal/videos"
@@ -67,6 +68,7 @@ func main() {
 	videoRepo := videos.NewMongoRepository(mongoClient, "streaming", "videos_catalog")
 	eventRepo := events.NewMongoRepository(mongoClient, "streaming", "events")
 	uploadStateRepo := uploadstate.NewMongoRepository(mongoClient, "streaming", "upload_sessions", "videos")
+	runsRepo := runs.NewMongoRepository(mongoClient, "streaming", "transcode_runs")
 
 	pub, err := retry(10, 2*time.Second, func() (*rabbitmq.Publisher, error) {
 		return rabbitmq.NewPublisher(rabbitMQURL)
@@ -83,6 +85,8 @@ func main() {
 
 	// Instantiate Services & Handlers
 	eventsService := events.NewService(pub, eventRepo, videoRepo)
+	eventsService.SetRunWriter(runs.NewService(runsRepo))
+	runsHandler := runs.NewHandler(runsRepo)
 	eventsHandler := events.NewHandler(eventsService)
 
 	uploadStateService := uploadstate.NewService(uploadStateRepo)
@@ -94,7 +98,7 @@ func main() {
 	videosService := videos.NewService(storageAdapters, videoRepo)
 	videosHandler := videos.NewHandler(videosService)
 
-	registerRoutes(app, eventsHandler, webhookHandler, videosHandler, uploadStateHandler)
+	registerRoutes(app, eventsHandler, webhookHandler, videosHandler, uploadStateHandler, runsHandler)
 
 	installGracefulShutdown(app, nil)
 
@@ -125,7 +129,7 @@ func requireEnv(key string) string {
 	return value
 }
 
-func registerRoutes(app *fiber.App, eventsHandler *events.Handler, webhookHandler *webhooks.Handler, videosHandler *videos.Handler, uploadStateHandler *uploadstate.Handler) {
+func registerRoutes(app *fiber.App, eventsHandler *events.Handler, webhookHandler *webhooks.Handler, videosHandler *videos.Handler, uploadStateHandler *uploadstate.Handler, runsHandler *runs.Handler) {
 	v1 := app.Group("/api/v1")
 	v1.Post("/events", eventsHandler.ReceiveEvent)
 	v1.Post("/webhooks/storage/:provider", webhookHandler.HandleProviderWebhook)
@@ -140,6 +144,8 @@ func registerRoutes(app *fiber.App, eventsHandler *events.Handler, webhookHandle
 	v1.Get("/upload-state/videos/:videoId", uploadStateHandler.GetVideo)
 	v1.Patch("/upload-state/videos/:videoId", uploadStateHandler.PatchVideo)
 	v1.Delete("/upload-state/videos/:videoId", uploadStateHandler.DeleteVideo)
+	v1.Get("/runs", runsHandler.ListRuns)
+	v1.Get("/runs/:videoId", runsHandler.GetRuns)
 }
 
 func createStorageAdapters() map[string]adapters.StorageAdapter {

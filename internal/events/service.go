@@ -18,10 +18,17 @@ type FrontEndEvent struct {
 	Payload   EventPayload `json:"payload"`
 }
 
+// RunWriter persists a transcode_runs document from a completed-transcode event.
+// It is optional; when nil, run persistence is skipped.
+type RunWriter interface {
+	UpsertFromEvent(ctx context.Context, payload map[string]interface{}) error
+}
+
 type Service struct {
 	publisher rabbitmq.MessagePublisher
 	repo      EventRepository
 	videoRepo videos.VideoRepository
+	runWriter RunWriter
 }
 
 func NewService(pub rabbitmq.MessagePublisher, repo EventRepository, videoRepo videos.VideoRepository) *Service {
@@ -31,6 +38,8 @@ func NewService(pub rabbitmq.MessagePublisher, repo EventRepository, videoRepo v
 		videoRepo: videoRepo,
 	}
 }
+
+func (s *Service) SetRunWriter(w RunWriter) { s.runWriter = w }
 
 func (s *Service) ProcessEvent(event FrontEndEvent) error {
 	record := eventToRecord(event)
@@ -52,6 +61,14 @@ func (s *Service) ProcessEvent(event FrontEndEvent) error {
 	err := s.publisher.Publish(record.RoutingKey, event.Payload)
 	if err != nil {
 		return fmt.Errorf("failed to process and publish event: %w", err)
+	}
+
+	if event.EventType == "transcode.completed" && s.runWriter != nil {
+		if err := s.runWriter.UpsertFromEvent(context.Background(), event.Payload); err != nil {
+			// Best-effort: a runs-write failure must not fail event processing or the
+			// RabbitMQ publish — the catalog is already updated by the worker.
+			fmt.Printf("failed to persist transcode run (non-fatal): %v\n", err)
+		}
 	}
 
 	return nil

@@ -312,6 +312,47 @@ func TestTranscodeFromPayloadNilWhenAbsent(t *testing.T) {
 	}
 }
 
+type fakeRunWriter struct {
+	called      int
+	lastPayload EventPayload
+}
+
+func (f *fakeRunWriter) UpsertFromEvent(_ context.Context, p map[string]interface{}) error {
+	f.called++
+	f.lastPayload = p
+	return nil
+}
+
+func TestProcessEventWritesRunOnTranscodeCompleted(t *testing.T) {
+	publisher := &mockPublisher{}
+	repo := &mockEventRepository{}
+	svc := NewService(publisher, repo, nil)
+	writer := &fakeRunWriter{}
+	svc.SetRunWriter(writer)
+
+	if err := svc.ProcessEvent(FrontEndEvent{
+		EventType: "transcode.completed",
+		Payload:   EventPayload{"jobId": "v1-1", "videoId": "v1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if writer.called != 1 {
+		t.Fatalf("run writer called %d times, want 1", writer.called)
+	}
+}
+
+func TestProcessEventSkipsRunForOtherEvents(t *testing.T) {
+	publisher := &mockPublisher{}
+	repo := &mockEventRepository{}
+	svc := NewService(publisher, repo, nil)
+	writer := &fakeRunWriter{}
+	svc.SetRunWriter(writer)
+	_ = svc.ProcessEvent(FrontEndEvent{EventType: "upload.progress", Payload: EventPayload{"videoId": "v1"}})
+	if writer.called != 0 {
+		t.Fatalf("run writer should not be called for upload.progress")
+	}
+}
+
 func TestFirstInt64(t *testing.T) {
 	payload := EventPayload{
 		"int":     1,

@@ -36,6 +36,10 @@ func collectionIndexes() map[string][]mongo.IndexModel {
 		"upload_sessions": {
 			{Keys: bson.D{{Key: "session_id", Value: 1}}, Options: options.Index().SetUnique(true)},
 		},
+		"transcode_runs": {
+			{Keys: bson.D{{Key: "job_id", Value: 1}}, Options: options.Index().SetUnique(true)},
+			{Keys: bson.D{{Key: "machine_label", Value: 1}, {Key: "completed_at", Value: -1}}},
+		},
 	}
 }
 
