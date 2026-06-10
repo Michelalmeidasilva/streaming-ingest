@@ -1,0 +1,83 @@
+package runs
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+type stubReader struct {
+	listFilter Filter
+	listResult []Run
+	byVideo    []Run
+	gotVideoID string
+}
+
+func (s *stubReader) List(_ context.Context, f Filter) ([]Run, error) {
+	s.listFilter = f
+	return s.listResult, nil
+}
+func (s *stubReader) GetByVideoID(_ context.Context, videoID string) ([]Run, error) {
+	s.gotVideoID = videoID
+	return s.byVideo, nil
+}
+
+func TestListRunsAppliesFilters(t *testing.T) {
+	stub := &stubReader{listResult: []Run{{JobID: "a"}}}
+	app := fiber.New()
+	h := NewHandler(stub)
+	app.Get("/api/v1/runs", h.ListRuns)
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/api/v1/runs?machineLabel=c7g&codec=av1", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if stub.listFilter.MachineLabel != "c7g" || stub.listFilter.Codec != "av1" {
+		t.Fatalf("filter not applied: %#v", stub.listFilter)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	var out struct {
+		Runs []Run `json:"runs"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Runs) != 1 {
+		t.Fatalf("want 1 run, got %d", len(out.Runs))
+	}
+}
+
+func TestGetRunsByVideoID(t *testing.T) {
+	stub := &stubReader{byVideo: []Run{{JobID: "a"}, {JobID: "b"}}}
+	app := fiber.New()
+	h := NewHandler(stub)
+	app.Get("/api/v1/runs/:videoId", h.GetRuns)
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/api/v1/runs/v1", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	var out struct {
+		Runs []Run `json:"runs"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Runs) != 2 {
+		t.Fatalf("want 2 runs, got %d", len(out.Runs))
+	}
+	if stub.gotVideoID != "v1" {
+		t.Fatalf("videoId not forwarded: got %q", stub.gotVideoID)
+	}
+}
