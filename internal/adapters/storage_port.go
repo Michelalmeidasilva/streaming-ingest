@@ -47,14 +47,17 @@ type RawVideoParams struct {
 // TranscodeRequest mirrors streaming-transcode's domain.TranscodeRequest so the
 // selection survives the trip through RabbitMQ unchanged.
 type TranscodeRequest struct {
-	Codecs     []string             `json:"codecs,omitempty" bson:"codecs,omitempty"`
-	Renditions []RequestedRendition `json:"renditions,omitempty" bson:"renditions,omitempty"`
+	Codecs         []string             `json:"codecs,omitempty" bson:"codecs,omitempty"`
+	Protocols      []string             `json:"protocols,omitempty" bson:"protocols,omitempty"`
+	SegmentSeconds int                  `json:"segmentSeconds,omitempty" bson:"segmentSeconds,omitempty"`
+	Renditions     []RequestedRendition `json:"renditions,omitempty" bson:"renditions,omitempty"`
 }
 
 type RequestedRendition struct {
-	Width  int    `json:"width" bson:"width"`
-	Height int    `json:"height" bson:"height"`
-	Codec  string `json:"codec,omitempty" bson:"codec,omitempty"`
+	Width       int    `json:"width" bson:"width"`
+	Height      int    `json:"height" bson:"height"`
+	Codec       string `json:"codec,omitempty" bson:"codec,omitempty"`
+	BitrateKbps int    `json:"bitrateKbps,omitempty" bson:"bitrateKbps,omitempty"`
 }
 
 // StorageAdapter parses provider-specific webhooks into domain events
