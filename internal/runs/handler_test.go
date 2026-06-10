@@ -38,7 +38,10 @@ func TestCreateBenchmarkRun(t *testing.T) {
 	h.SetBenchmarkWriter(w)
 	app.Post("/api/v1/benchmark-runs", h.CreateBenchmarkRun)
 
-	body := `{"machineLabel":"c5.xlarge","clip":"a.mp4","repetition":1,"renditions":[{"codec":"av1","width":1280,"height":720,"elapsedSeconds":9}]}`
+	body := `{"machineLabel":"c5.xlarge","clip":"a.mp4","repetition":1,` +
+		`"sourceWidth":1920,"sourceHeight":1080,"sourceDurationSeconds":31.5,"sourceFps":30,` +
+		`"sourceCodec":"vp9","sourceBitrateKbps":4200,"sourceFileSizeBytes":1234,` +
+		`"renditions":[{"codec":"av1","width":1280,"height":720,"elapsedSeconds":9}]}`
 	req := httptest.NewRequest("POST", "/api/v1/benchmark-runs", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req)
@@ -50,6 +53,10 @@ func TestCreateBenchmarkRun(t *testing.T) {
 	}
 	if w.last.MachineLabel != "c5.xlarge" || len(w.last.Renditions) != 1 || w.last.Renditions[0].Codec != "av1" {
 		t.Fatalf("not recorded: %#v", w.last)
+	}
+	if w.last.SourceWidth != 1920 || w.last.SourceHeight != 1080 || w.last.SourceDurationSeconds != 31.5 ||
+		w.last.SourceFPS != 30 || w.last.SourceCodec != "vp9" || w.last.SourceBitrateKbps != 4200 {
+		t.Fatalf("source fields not parsed: %#v", w.last)
 	}
 }
 
