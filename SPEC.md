@@ -50,6 +50,52 @@ Storage-synced video list. Array of `DomainEvent`-shaped records.
 ### GET /api/v1/videos/database
 MongoDB catalog (`videos_catalog` collection). Array of `VideoRecord`.
 
+### GET /api/v1/runs
+Returns transcode run documents from the `transcode_runs` collection, sorted by `completedAt` descending.
+
+Query parameters:
+- `machineLabel` (optional) — filter by exact machine label
+- `codec` (optional) — filter by codec (matches against any rendition's codec field)
+
+Response `200`:
+```json
+[
+  {
+    "jobId": "<uuid>",
+    "videoId": "<uuid>",
+    "machineLabel": "c5.xlarge",
+    "hostname": "ip-10-0-1-42.us-east-2.compute.internal",
+    "cpuCores": 4,
+    "profile": "production",
+    "elapsedSeconds": 142.3,
+    "rtf": 0.58,
+    "sourceFileSizeBytes": 524288000,
+    "totalOutputSizeBytes": 89128960,
+    "completedAt": "2026-06-09T14:32:00Z",
+    "createdAt": "2026-06-09T14:29:38Z",
+    "renditions": [
+      {
+        "name": "360p",
+        "codec": "h264",
+        "width": 640,
+        "height": 360,
+        "preset": "fast",
+        "targetBitrateKbps": 800,
+        "outputBitrateKbps": 793,
+        "elapsedSeconds": 28.1,
+        "avgCpuPercent": 92.4,
+        "maxCpuPercent": 99.1,
+        "avgMemoryMb": 310.5,
+        "maxMemoryMb": 412.0
+      }
+    ]
+  }
+]
+```
+
+### GET /api/v1/runs/:videoId
+Returns the single transcode run document for the given `videoId`, or `404` if not found.
+
 ### Telemetry (CloudWatch EMF)
 Per-request telemetry is emitted to stdout as CloudWatch Embedded Metric Format (EMF).
 Each request produces one JSON line with RED metrics (`RequestCount`, `RequestLatency` ms,
@@ -79,6 +125,35 @@ Canonical per-video lifecycle document. Key fields:
 
 Populated by storage webhooks and the storage-sync backfill. Contains `videoId`, `filename`, `size`, `provider`, `status`, `url`, `createdAt`.
 
+### Transcode runs document (`transcode_runs` collection)
+
+One document per completed transcode job, upserted best-effort when the gateway receives a
+`transcode.completed` event on `POST /api/v1/events`. The write is idempotent: `$setOnInsert`
+is used for `createdAt` so re-delivery of the same `jobId` does not clobber the original
+timestamp. A failure to write the run document is logged but never fails the event response
+or the RabbitMQ publish — the gateway remains ingest-and-publish only; it does not consume
+any queues.
+
+| Field (bson) | JSON | Type | Description |
+|---|---|---|---|
+| `job_id` | `jobId` | string | Unique transcode job identifier (unique index) |
+| `video_id` | `videoId` | string | Platform video UUID |
+| `machine_label` | `machineLabel` | string | `TRANSCODE_MACHINE_LABEL` from the worker, or hostname fallback |
+| `hostname` | `hostname` | string | Worker container/instance hostname |
+| `cpu_cores` | `cpuCores` | int | CPU core count reported by the worker |
+| `profile` | `profile` | string | Rendition profile identifier |
+| `elapsed_seconds` | `elapsedSeconds` | float64 | Wall-clock seconds for the full job |
+| `rtf` | `rtf` | float64 | Real-time factor (elapsed / source duration) |
+| `source_file_size_bytes` | `sourceFileSizeBytes` | int64 | Raw source file size |
+| `total_output_size_bytes` | `totalOutputSizeBytes` | int64 | Sum of all packaged output sizes |
+| `completed_at` | `completedAt` | time.Time | Timestamp from the event payload |
+| `created_at` | `createdAt` | time.Time | Time the run document was first inserted (`$setOnInsert`) |
+| `renditions` | `renditions` | array | Per-rendition metrics (see below) |
+
+Each rendition entry: `name`, `codec`, `width`, `height`, `preset`,
+`targetBitrateKbps`, `outputBitrateKbps`, `elapsedSeconds`, `avgCpuPercent`,
+`maxCpuPercent`, `avgMemoryMb`, `maxMemoryMb`.
+
 ### Indexes
 
 Ensured at startup (`internal/mongoindex`, wired in `cmd/api/main.go`); idempotent and non-fatal on failure:
@@ -89,6 +164,8 @@ Ensured at startup (`internal/mongoindex`, wired in `cmd/api/main.go`); idempote
 | `videos` | `created_at` (desc) | upload-state list sort polled by the admin UI |
 | `videos_catalog` | `video_id` (unique) | catalog upsert/lookup key |
 | `upload_sessions` | `session_id` (unique) | multipart session lookup key |
+| `transcode_runs` | `job_id` (unique) | idempotent upsert key; prevents duplicate run documents |
+| `transcode_runs` | `machine_label` asc + `completed_at` desc | filter-by-label queries sorted by recency |
 
 ## Storage Adapters
 

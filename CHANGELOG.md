@@ -2,6 +2,10 @@
 
 ## [Unreleased] 2026-06-09
 ### Added
+- transcode_runs collection + GET /api/v1/runs and /api/v1/runs/:videoId. The gateway upserts one run per video on transcode.completed (best-effort, idempotent by jobId). Still ingest-and-publish only — no queue consumption.
+
+## [Unreleased] 2026-06-09
+### Added
 - Persiste e encaminha a seleção `transcode` do `upload.started` ao evento de transcode (espelho do `rawVideo`): novos campos `Transcode *TranscodeRequest` no `DomainEvent` (pacote `adapters`) e no registro `Video` (pacote `videos`). A função `transcodeFromPayload` extrai `codecs[]` e `renditions[{width,height,codec}]` do payload do evento; o handler de webhook faz lookup pelo `videoId` e copia o campo para o evento publicado no RabbitMQ. Quando ausente, o transcoder usa seus defaults.
 
 ## [Unreleased] 2026-06-08 — rabbitmq: reconnect+retry no publish (corrige 500 em conexão velha)
