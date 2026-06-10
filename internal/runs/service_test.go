@@ -88,6 +88,18 @@ func TestRecordBenchmarkRunInserts(t *testing.T) {
 	if !repo.lastInsert.Benchmark || repo.lastInsert.Clip != "a.mp4" || repo.lastInsert.MachineLabel != "c5.xlarge" {
 		t.Fatalf("benchmark run not recorded correctly: %#v", repo.lastInsert)
 	}
+	// Benchmark runs carry no transcode jobId; the service must assign a unique one
+	// so multiple inserts don't collide on the unique job_id index.
+	if repo.lastInsert.JobID == "" {
+		t.Fatal("benchmark run must get a synthetic non-empty jobId")
+	}
+	first := repo.lastInsert.JobID
+	if err := svc.RecordBenchmarkRun(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if repo.lastInsert.JobID == first {
+		t.Fatalf("each benchmark run must get a distinct jobId, got %q twice", first)
+	}
 }
 
 func TestUpsertFromEventSkipsWithoutJobID(t *testing.T) {

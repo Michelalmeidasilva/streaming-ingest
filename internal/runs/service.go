@@ -3,6 +3,8 @@ package runs
 import (
 	"context"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type Service struct {
@@ -14,8 +16,14 @@ func NewService(repo Repository) *Service {
 }
 
 // RecordBenchmarkRun forces Benchmark=true and persists one benchmark measurement.
+// Benchmark runs are not tied to a transcode job, so they carry no jobId; we
+// assign a unique synthetic one so they don't collide on the unique job_id index
+// (every measurement is a distinct insert, never an upsert).
 func (s *Service) RecordBenchmarkRun(ctx context.Context, run Run) error {
 	run.Benchmark = true
+	if run.JobID == "" {
+		run.JobID = "bench-" + primitive.NewObjectID().Hex()
+	}
 	return s.repo.Insert(ctx, run)
 }
 
