@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased] 2026-06-10
+### Added
+- POST /api/v1/benchmark-runs (inserts a benchmark=true run); GET /api/v1/runs?benchmark filter; benchmark/clip/repetition fields on transcode_runs. Benchmark runs never touch the video catalog.
+
 ## [Unreleased] 2026-06-09
 ### Added
 - transcode_runs collection + GET /api/v1/runs and /api/v1/runs/:videoId. The gateway upserts one run per video on transcode.completed (best-effort, idempotent by jobId). Still ingest-and-publish only — no queue consumption.

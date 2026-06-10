@@ -50,12 +50,49 @@ Storage-synced video list. Array of `DomainEvent`-shaped records.
 ### GET /api/v1/videos/database
 MongoDB catalog (`videos_catalog` collection). Array of `VideoRecord`.
 
+### POST /api/v1/benchmark-runs
+Inserts a single benchmark measurement into the `transcode_runs` collection with
+`benchmark=true`. Called by `cmd/benchmark` in `streaming-transcode` for each
+codec×resolution×clip×repeat cell. Each call is an **insert** (not upsert) — duplicate
+`jobId` values result in a unique-index error, which the caller logs and continues.
+
+Benchmark runs are never patched onto upload-state video records and never affect the
+`videos_catalog` or the video lifecycle.
+
+Request body: same `JobObservability` shape as a `transcode.completed` event, plus the
+benchmark-specific fields:
+
+```json
+{
+  "jobId": "<uuid>",
+  "machineLabel": "c5.xlarge",
+  "hostname": "ip-10-0-1-42.us-east-2.compute.internal",
+  "cpuCores": 4,
+  "clip": "benchmark/corpus/sample-720p.mp4",
+  "repetition": 1,
+  "benchmark": true,
+  "elapsedSeconds": 28.4,
+  "renditions": [ … ]
+}
+```
+
+Response `202`:
+```json
+{ "message": "Benchmark run recorded" }
+```
+
+- 400 validation failure
+- 500 database error
+
 ### GET /api/v1/runs
 Returns transcode run documents from the `transcode_runs` collection, sorted by `completedAt` descending.
 
 Query parameters:
 - `machineLabel` (optional) — filter by exact machine label
 - `codec` (optional) — filter by codec (matches against any rendition's codec field)
+- `benchmark` (optional) — `true` to return only benchmark runs; `false` (default) to
+  return only production runs. Production filter uses `{ benchmark: { $ne: true } }` so
+  documents that pre-date the benchmark field are included in the production view.
 
 Response `200`:
 ```json
@@ -148,6 +185,9 @@ any queues.
 | `total_output_size_bytes` | `totalOutputSizeBytes` | int64 | Sum of all packaged output sizes |
 | `completed_at` | `completedAt` | time.Time | Timestamp from the event payload |
 | `created_at` | `createdAt` | time.Time | Time the run document was first inserted (`$setOnInsert`) |
+| `benchmark` | `benchmark` | bool? | `true` for benchmark runs; absent/false for production runs |
+| `clip` | `clip` | string? | S3 key of the corpus clip (benchmark runs only) |
+| `repetition` | `repetition` | int? | Repeat index within the matrix cell (benchmark runs only) |
 | `renditions` | `renditions` | array | Per-rendition metrics (see below) |
 
 Each rendition entry: `name`, `codec`, `width`, `height`, `preset`,
