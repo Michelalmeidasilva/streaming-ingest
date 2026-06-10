@@ -8,6 +8,7 @@ import (
 type capturingRepo struct{ last Run }
 
 func (c *capturingRepo) Upsert(_ context.Context, run Run) error             { c.last = run; return nil }
+func (c *capturingRepo) Insert(_ context.Context, run Run) error             { c.last = run; return nil }
 func (c *capturingRepo) List(context.Context, Filter) ([]Run, error)         { return nil, nil }
 func (c *capturingRepo) GetByVideoID(context.Context, string) ([]Run, error) { return nil, nil }
 

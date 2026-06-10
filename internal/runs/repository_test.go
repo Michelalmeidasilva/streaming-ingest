@@ -10,9 +10,11 @@ import (
 )
 
 type fakeColl struct {
-	filters []interface{}
-	upserts []bson.M
-	docs    []Run
+	filters  []interface{}
+	upserts  []bson.M
+	docs     []Run
+	inserted []interface{}
+	lastFind interface{}
 }
 
 func (f *fakeColl) UpdateOne(_ context.Context, filter, update interface{}, _ ...*options.UpdateOptions) (*mongo.UpdateResult, error) {
@@ -21,8 +23,14 @@ func (f *fakeColl) UpdateOne(_ context.Context, filter, update interface{}, _ ..
 	return &mongo.UpdateResult{}, nil
 }
 
-func (f *fakeColl) Find(_ context.Context, _ interface{}, _ ...*options.FindOptions) (cursor, error) {
+func (f *fakeColl) Find(_ context.Context, filter interface{}, _ ...*options.FindOptions) (cursor, error) {
+	f.lastFind = filter
 	return &fakeCursor{docs: f.docs}, nil
+}
+
+func (f *fakeColl) InsertOne(_ context.Context, doc interface{}, _ ...*options.InsertOneOptions) (*mongo.InsertOneResult, error) {
+	f.inserted = append(f.inserted, doc)
+	return &mongo.InsertOneResult{}, nil
 }
 
 type fakeCursor struct{ docs []Run }
@@ -84,5 +92,42 @@ func TestListReturnsDocs(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("want 2 runs, got %d", len(got))
+	}
+}
+
+func TestInsertWritesBenchmarkDoc(t *testing.T) {
+	fc := &fakeColl{}
+	repo := &MongoRepository{collection: fc}
+	if err := repo.Insert(context.Background(), Run{MachineLabel: "c5.xlarge", Benchmark: true, Clip: "a.mp4", Repetition: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fc.inserted) != 1 {
+		t.Fatalf("want 1 insert, got %d", len(fc.inserted))
+	}
+	got := fc.inserted[0].(Run)
+	if !got.Benchmark || got.Clip != "a.mp4" || got.CreatedAt.IsZero() {
+		t.Fatalf("bad inserted run: %#v", got)
+	}
+}
+
+func TestListBenchmarkFilter(t *testing.T) {
+	fc := &fakeColl{docs: []Run{{JobID: "a"}}}
+	repo := &MongoRepository{collection: fc}
+	bt := true
+	if _, err := repo.List(context.Background(), Filter{Benchmark: &bt}); err != nil {
+		t.Fatal(err)
+	}
+	q, ok := fc.lastFind.(bson.M)
+	if !ok || q["benchmark"] != true {
+		t.Fatalf("benchmark=true filter not applied: %#v", fc.lastFind)
+	}
+
+	bf := false
+	if _, err := repo.List(context.Background(), Filter{Benchmark: &bf}); err != nil {
+		t.Fatal(err)
+	}
+	q2, _ := fc.lastFind.(bson.M)
+	if _, hasNe := q2["benchmark"].(bson.M); !hasNe {
+		t.Fatalf("benchmark=false should use $ne:true, got %#v", q2["benchmark"])
 	}
 }

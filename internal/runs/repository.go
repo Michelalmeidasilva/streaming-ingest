@@ -38,6 +38,9 @@ type Run struct {
 	RTF                  float64        `bson:"rtf" json:"rtf"`
 	SourceFileSizeBytes  int64          `bson:"source_file_size_bytes" json:"sourceFileSizeBytes"`
 	TotalOutputSizeBytes int64          `bson:"total_output_size_bytes" json:"totalOutputSizeBytes"`
+	Benchmark            bool           `bson:"benchmark,omitempty" json:"benchmark,omitempty"`
+	Clip                 string         `bson:"clip,omitempty" json:"clip,omitempty"`
+	Repetition           int            `bson:"repetition,omitempty" json:"repetition,omitempty"`
 	Renditions           []RunRendition `bson:"renditions" json:"renditions"`
 	CompletedAt          time.Time      `bson:"completed_at" json:"completedAt"`
 	CreatedAt            time.Time      `bson:"created_at" json:"createdAt"`
@@ -47,10 +50,12 @@ type Run struct {
 type Filter struct {
 	MachineLabel string
 	Codec        string
+	Benchmark    *bool
 }
 
 type Repository interface {
 	Upsert(ctx context.Context, run Run) error
+	Insert(ctx context.Context, run Run) error
 	List(ctx context.Context, filter Filter) ([]Run, error)
 	GetByVideoID(ctx context.Context, videoID string) ([]Run, error)
 }
@@ -63,6 +68,7 @@ type cursor interface {
 type collection interface {
 	UpdateOne(ctx context.Context, filter, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error)
 	Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (cursor, error)
+	InsertOne(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error)
 }
 
 type realCollection struct{ c *mongo.Collection }
@@ -73,6 +79,10 @@ func (r *realCollection) UpdateOne(ctx context.Context, filter, update interface
 
 func (r *realCollection) Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (cursor, error) {
 	return r.c.Find(ctx, filter, opts...)
+}
+
+func (r *realCollection) InsertOne(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error) {
+	return r.c.InsertOne(ctx, document, opts...)
 }
 
 type MongoRepository struct {
@@ -106,6 +116,14 @@ func (r *MongoRepository) Upsert(ctx context.Context, run Run) error {
 	return err
 }
 
+func (r *MongoRepository) Insert(ctx context.Context, run Run) error {
+	if run.CreatedAt.IsZero() {
+		run.CreatedAt = time.Now().UTC()
+	}
+	_, err := r.collection.InsertOne(ctx, run)
+	return err
+}
+
 func (r *MongoRepository) List(ctx context.Context, filter Filter) ([]Run, error) {
 	query := bson.M{}
 	if filter.MachineLabel != "" {
@@ -113,6 +131,13 @@ func (r *MongoRepository) List(ctx context.Context, filter Filter) ([]Run, error
 	}
 	if filter.Codec != "" {
 		query["renditions.codec"] = filter.Codec
+	}
+	if filter.Benchmark != nil {
+		if *filter.Benchmark {
+			query["benchmark"] = true
+		} else {
+			query["benchmark"] = bson.M{"$ne": true}
+		}
 	}
 	opts := options.Find().SetSort(bson.D{{Key: "completed_at", Value: -1}})
 	cur, err := r.collection.Find(ctx, query, opts)
