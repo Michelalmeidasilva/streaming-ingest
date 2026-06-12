@@ -11,18 +11,19 @@ import (
 
 // RunRendition is one codec/resolution output measured during a transcode run.
 type RunRendition struct {
-	Name              string  `bson:"name" json:"name"`
-	Codec             string  `bson:"codec" json:"codec"`
-	Width             int     `bson:"width" json:"width"`
-	Height            int     `bson:"height" json:"height"`
-	Preset            string  `bson:"preset,omitempty" json:"preset,omitempty"`
-	TargetBitrateKbps int     `bson:"target_bitrate_kbps" json:"targetBitrateKbps"`
-	OutputBitrateKbps int64   `bson:"output_bitrate_kbps" json:"outputBitrateKbps"`
-	ElapsedSeconds    float64 `bson:"elapsed_seconds" json:"elapsedSeconds"`
-	AvgCPUPercent     float64 `bson:"avg_cpu_percent" json:"avgCpuPercent"`
-	MaxCPUPercent     float64 `bson:"max_cpu_percent" json:"maxCpuPercent"`
-	AvgMemoryMB       float64 `bson:"avg_memory_mb" json:"avgMemoryMb"`
-	MaxMemoryMB       float64 `bson:"max_memory_mb" json:"maxMemoryMb"`
+	Name                string  `bson:"name" json:"name"`
+	Codec               string  `bson:"codec" json:"codec"`
+	Width               int     `bson:"width" json:"width"`
+	Height              int     `bson:"height" json:"height"`
+	Preset              string  `bson:"preset,omitempty" json:"preset,omitempty"`
+	TargetBitrateKbps   int     `bson:"target_bitrate_kbps" json:"targetBitrateKbps"`
+	OutputBitrateKbps   int64   `bson:"output_bitrate_kbps" json:"outputBitrateKbps"`
+	OutputFileSizeBytes int64   `bson:"output_file_size_bytes,omitempty" json:"outputFileSizeBytes,omitempty"`
+	ElapsedSeconds      float64 `bson:"elapsed_seconds" json:"elapsedSeconds"`
+	AvgCPUPercent       float64 `bson:"avg_cpu_percent" json:"avgCpuPercent"`
+	MaxCPUPercent       float64 `bson:"max_cpu_percent" json:"maxCpuPercent"`
+	AvgMemoryMB         float64 `bson:"avg_memory_mb" json:"avgMemoryMb"`
+	MaxMemoryMB         float64 `bson:"max_memory_mb" json:"maxMemoryMb"`
 }
 
 // Run is the persisted record of one video transcode on one machine.

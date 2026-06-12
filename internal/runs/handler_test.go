@@ -41,7 +41,7 @@ func TestCreateBenchmarkRun(t *testing.T) {
 	body := `{"machineLabel":"c5.xlarge","clip":"a.mp4","repetition":1,` +
 		`"sourceWidth":1920,"sourceHeight":1080,"sourceDurationSeconds":31.5,"sourceFps":30,` +
 		`"sourceCodec":"vp9","sourceBitrateKbps":4200,"sourceFileSizeBytes":1234,` +
-		`"renditions":[{"codec":"av1","width":1280,"height":720,"elapsedSeconds":9}]}`
+		`"renditions":[{"codec":"av1","width":1280,"height":720,"elapsedSeconds":9,"outputFileSizeBytes":2000000}]}`
 	req := httptest.NewRequest("POST", "/api/v1/benchmark-runs", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req)
@@ -57,6 +57,9 @@ func TestCreateBenchmarkRun(t *testing.T) {
 	if w.last.SourceWidth != 1920 || w.last.SourceHeight != 1080 || w.last.SourceDurationSeconds != 31.5 ||
 		w.last.SourceFPS != 30 || w.last.SourceCodec != "vp9" || w.last.SourceBitrateKbps != 4200 {
 		t.Fatalf("source fields not parsed: %#v", w.last)
+	}
+	if w.last.Renditions[0].OutputFileSizeBytes != 2000000 {
+		t.Fatalf("output file size not persisted: %#v", w.last.Renditions[0])
 	}
 }
 
