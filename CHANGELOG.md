@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased] 2026-06-11
+### Added
+- transcode_runs renditions persist outputFileSizeBytes (encoded output size).
+
 ## [Unreleased] 2026-06-10
 ### Added
 - Benchmark runs persist source characterization fields (sourceWidth/height/durationSeconds/fps/codec/bitrateKbps) on transcode_runs.

@@ -29,7 +29,7 @@ documents. The `benchmark` boolean field is the partition key.
 | `source_codec` | `sourceCodec` | string | Source clip video codec, e.g. `h264` (empty if probe failed) |
 | `source_bitrate_kbps` | `sourceBitrateKbps` | int | Source clip container bitrate in kbps (0 if probe failed) |
 | `source_file_size_bytes` | `sourceFileSizeBytes` | int64 | Source clip file size in bytes (0 if probe failed) |
-| `renditions` | `renditions` | array | Per-rendition metrics (name, codec, elapsed, avg/max CPU, output bitrate, etc.) |
+| `renditions` | `renditions` | array | Per-rendition metrics (name, codec, elapsed, avg/max CPU, output bitrate, output file size, etc.) |
 | `completed_at` | `completedAt` | time.Time | Timestamp from the request payload |
 | `created_at` | `createdAt` | time.Time | Time of insert |
 
@@ -69,6 +69,7 @@ Request:
       "preset": "fast",
       "targetBitrateKbps": 2800,
       "outputBitrateKbps": 2743,
+      "outputFileSizeBytes": 17825792,
       "elapsedSeconds": 28.4,
       "avgCpuPercent": 94.2,
       "maxCpuPercent": 99.8,

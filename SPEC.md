@@ -197,8 +197,8 @@ any queues.
 | `renditions` | `renditions` | array | Per-rendition metrics (see below) |
 
 Each rendition entry: `name`, `codec`, `width`, `height`, `preset`,
-`targetBitrateKbps`, `outputBitrateKbps`, `elapsedSeconds`, `avgCpuPercent`,
-`maxCpuPercent`, `avgMemoryMb`, `maxMemoryMb`.
+`targetBitrateKbps`, `outputBitrateKbps`, `outputFileSizeBytes`, `elapsedSeconds`,
+`avgCpuPercent`, `maxCpuPercent`, `avgMemoryMb`, `maxMemoryMb`.
 
 ### Indexes
 
