@@ -2,6 +2,7 @@ package runs
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -107,6 +108,17 @@ func TestInsertWritesBenchmarkDoc(t *testing.T) {
 	got := fc.inserted[0].(Run)
 	if !got.Benchmark || got.Clip != "a.mp4" || got.CreatedAt.IsZero() {
 		t.Fatalf("bad inserted run: %#v", got)
+	}
+}
+
+func TestRunRenditionQualityFieldsJSON(t *testing.T) {
+	in := []byte(`{"codec":"h264","width":1920,"height":1080,"qualityParam":"q31","vmaf":92.3,"psnr":41.1}`)
+	var r RunRendition
+	if err := json.Unmarshal(in, &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if r.QualityParam != "q31" || r.VMAF != 92.3 || r.PSNR != 41.1 {
+		t.Fatalf("parsed = %+v", r)
 	}
 }
 

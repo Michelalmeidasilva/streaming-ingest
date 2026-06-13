@@ -19,6 +19,9 @@ type RunRendition struct {
 	TargetBitrateKbps   int     `bson:"target_bitrate_kbps" json:"targetBitrateKbps"`
 	OutputBitrateKbps   int64   `bson:"output_bitrate_kbps" json:"outputBitrateKbps"`
 	OutputFileSizeBytes int64   `bson:"output_file_size_bytes,omitempty" json:"outputFileSizeBytes,omitempty"`
+	QualityParam        string  `bson:"quality_param,omitempty" json:"qualityParam,omitempty"`
+	VMAF                float64 `bson:"vmaf,omitempty" json:"vmaf,omitempty"`
+	PSNR                float64 `bson:"psnr,omitempty" json:"psnr,omitempty"`
 	ElapsedSeconds      float64 `bson:"elapsed_seconds" json:"elapsedSeconds"`
 	AvgCPUPercent       float64 `bson:"avg_cpu_percent" json:"avgCpuPercent"`
 	MaxCPUPercent       float64 `bson:"max_cpu_percent" json:"maxCpuPercent"`
