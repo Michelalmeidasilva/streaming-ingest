@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased] 2026-06-13
+### Added
+- persist qualityParam/vmaf/psnr on benchmark renditions.
+
 ## [Unreleased] 2026-06-11
 ### Added
 - transcode_runs renditions persist outputFileSizeBytes (encoded output size).
