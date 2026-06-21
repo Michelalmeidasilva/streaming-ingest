@@ -27,6 +27,12 @@ type RunRendition struct {
 	MaxCPUPercent       float64 `bson:"max_cpu_percent" json:"maxCpuPercent"`
 	AvgMemoryMB         float64 `bson:"avg_memory_mb" json:"avgMemoryMb"`
 	MaxMemoryMB         float64 `bson:"max_memory_mb" json:"maxMemoryMb"`
+	// Provenance — exact encode parameters, for reproducibility/audit.
+	Encoder     string `bson:"encoder,omitempty" json:"encoder,omitempty"`
+	GOPSize     int    `bson:"gop_size,omitempty" json:"gopSize,omitempty"`
+	RateControl string `bson:"rate_control,omitempty" json:"rateControl,omitempty"`
+	Threads     int    `bson:"threads,omitempty" json:"threads,omitempty"`
+	FFmpegArgs  string `bson:"ffmpeg_args,omitempty" json:"ffmpegArgs,omitempty"`
 }
 
 // Run is the persisted record of one video transcode on one machine.
@@ -50,6 +56,8 @@ type Run struct {
 	TotalOutputSizeBytes  int64          `bson:"total_output_size_bytes" json:"totalOutputSizeBytes"`
 	Benchmark             bool           `bson:"benchmark,omitempty" json:"benchmark,omitempty"`
 	Clip                  string         `bson:"clip,omitempty" json:"clip,omitempty"`
+	ClipSHA256            string         `bson:"clip_sha256,omitempty" json:"clipSha256,omitempty"`
+	FFmpegVersion         string         `bson:"ffmpeg_version,omitempty" json:"ffmpegVersion,omitempty"`
 	Repetition            int            `bson:"repetition,omitempty" json:"repetition,omitempty"`
 	Renditions            []RunRendition `bson:"renditions" json:"renditions"`
 	CompletedAt           time.Time      `bson:"completed_at" json:"completedAt"`
