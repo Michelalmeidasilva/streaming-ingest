@@ -59,6 +59,7 @@ type Run struct {
 	ClipSHA256            string         `bson:"clip_sha256,omitempty" json:"clipSha256,omitempty"`
 	FFmpegVersion         string         `bson:"ffmpeg_version,omitempty" json:"ffmpegVersion,omitempty"`
 	Repetition            int            `bson:"repetition,omitempty" json:"repetition,omitempty"`
+	SessionID             string         `bson:"sessionId,omitempty" json:"sessionId,omitempty"`
 	Renditions            []RunRendition `bson:"renditions" json:"renditions"`
 	CompletedAt           time.Time      `bson:"completed_at" json:"completedAt"`
 	CreatedAt             time.Time      `bson:"created_at" json:"createdAt"`
@@ -69,6 +70,7 @@ type Filter struct {
 	MachineLabel string
 	Codec        string
 	Benchmark    *bool
+	SessionID    string
 }
 
 type Repository interface {
@@ -156,6 +158,9 @@ func (r *MongoRepository) List(ctx context.Context, filter Filter) ([]Run, error
 		} else {
 			query["benchmark"] = bson.M{"$ne": true}
 		}
+	}
+	if filter.SessionID != "" {
+		query["sessionId"] = filter.SessionID
 	}
 	opts := options.Find().SetSort(bson.D{{Key: "completed_at", Value: -1}})
 	cur, err := r.collection.Find(ctx, query, opts)

@@ -46,6 +46,7 @@ func (h *Handler) ListRuns(c *fiber.Ctx) error {
 	filter := Filter{
 		MachineLabel: c.Query("machineLabel"),
 		Codec:        c.Query("codec"),
+		SessionID:    c.Query("sessionId"),
 	}
 	switch c.Query("benchmark") {
 	case "true":

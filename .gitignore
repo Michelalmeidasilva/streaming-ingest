@@ -24,3 +24,4 @@ vendor/
 .env
 # air (hot reload em make development-infra)
 tmp/
+.superpowers/

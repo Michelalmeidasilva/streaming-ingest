@@ -108,6 +108,80 @@ func TestListRunsAppliesFilters(t *testing.T) {
 	}
 }
 
+func TestCreateBenchmarkRunPersistsSessionID(t *testing.T) {
+	w := &stubWriter{}
+	app := fiber.New()
+	h := NewHandler(&stubReader{})
+	h.SetBenchmarkWriter(w)
+	app.Post("/api/v1/benchmark-runs", h.CreateBenchmarkRun)
+
+	body := `{"machineLabel":"c5.xlarge","clip":"a.mp4","repetition":1,"sessionId":"sess-abc-123",` +
+		`"renditions":[{"codec":"av1","width":1280,"height":720,"elapsedSeconds":9}]}`
+	req := httptest.NewRequest("POST", "/api/v1/benchmark-runs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 202 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if w.last.SessionID != "sess-abc-123" {
+		t.Fatalf("sessionId not persisted: got %q, want %q", w.last.SessionID, "sess-abc-123")
+	}
+}
+
+func TestCreateBenchmarkRunWithoutSessionIDBackwardCompat(t *testing.T) {
+	w := &stubWriter{}
+	app := fiber.New()
+	h := NewHandler(&stubReader{})
+	h.SetBenchmarkWriter(w)
+	app.Post("/api/v1/benchmark-runs", h.CreateBenchmarkRun)
+
+	body := `{"machineLabel":"c5.xlarge","clip":"a.mp4","repetition":1,` +
+		`"renditions":[{"codec":"av1","width":1280,"height":720,"elapsedSeconds":9}]}`
+	req := httptest.NewRequest("POST", "/api/v1/benchmark-runs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 202 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if w.last.SessionID != "" {
+		t.Fatalf("sessionId should be empty when not provided: got %q", w.last.SessionID)
+	}
+}
+
+func TestListRunsFiltersSessionID(t *testing.T) {
+	stub := &stubReader{listResult: []Run{{JobID: "a", SessionID: "sess-abc-123"}}}
+	app := fiber.New()
+	h := NewHandler(stub)
+	app.Get("/api/v1/runs", h.ListRuns)
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/api/v1/runs?sessionId=sess-abc-123", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if stub.listFilter.SessionID != "sess-abc-123" {
+		t.Fatalf("sessionId filter not applied: got %q, want %q", stub.listFilter.SessionID, "sess-abc-123")
+	}
+	body, _ := io.ReadAll(resp.Body)
+	var out struct {
+		Runs []Run `json:"runs"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Runs) != 1 {
+		t.Fatalf("want 1 run, got %d", len(out.Runs))
+	}
+}
+
 func TestGetRunsByVideoID(t *testing.T) {
 	stub := &stubReader{byVideo: []Run{{JobID: "a"}, {JobID: "b"}}}
 	app := fiber.New()

@@ -122,6 +122,18 @@ func TestRunRenditionQualityFieldsJSON(t *testing.T) {
 	}
 }
 
+func TestListSessionIDFilter(t *testing.T) {
+	fc := &fakeColl{docs: []Run{{JobID: "a", SessionID: "sess-abc-123"}}}
+	repo := &MongoRepository{collection: fc}
+	if _, err := repo.List(context.Background(), Filter{SessionID: "sess-abc-123"}); err != nil {
+		t.Fatal(err)
+	}
+	q, ok := fc.lastFind.(bson.M)
+	if !ok || q["sessionId"] != "sess-abc-123" {
+		t.Fatalf("sessionId filter not applied to mongo query: %#v", fc.lastFind)
+	}
+}
+
 func TestListBenchmarkFilter(t *testing.T) {
 	fc := &fakeColl{docs: []Run{{JobID: "a"}}}
 	repo := &MongoRepository{collection: fc}
