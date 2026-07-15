@@ -10,7 +10,7 @@ COPY internal/ internal/
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/streaming-ingest ./cmd/api
 
-FROM public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1 AS lambda-adapter
+FROM public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 AS lambda-adapter
 
 FROM public.ecr.aws/docker/library/alpine:3.22
 
